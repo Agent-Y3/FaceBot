@@ -118,13 +118,6 @@ class Config:
   - Überprüfe, ob das Lied verfügbar ist.
   - Prüfe Konsolenausgaben für Fehlerdetails.
 
-- **Bildschirmerkennung funktioniert nicht**:
-  - Aktualisiere `captcha_checkbox.png` und `discord_input.png` für deine Bildschirmauflösung.
-  - Stelle sicher, dass der Browser maximiert ist.
-
-- **WinSCP/PuTTY-Fehler**:
-  - Überprüfe die Pfade in `Config`.
-  - Stelle sicher, dass Root-Server-Daten korrekt eingegeben wurden.
 
 - **Discord-Login-Probleme**:
   - Gib `discord_email` und `discord_password` in `Config` ein oder logge dich manuell ein.
@@ -151,10 +144,11 @@ Mögliche zukünftige Verbesserungen:
 - Unterstützung für Discord-Desktop-App.
 - Handhabung von Bild-Captchas.
 
-## Lizenz
-
-MIT License. Siehe `LICENSE` für Details (falls vorhanden).
 
 ## Kontakt
 
-Bei Fragen oder Problemen kontaktiere den Entwickler über [E-Mail einfügen] oder öffne ein Issue im Repository.
+Bei Fragen oder Problemen kontaktiere mich über Discord: yu_dino oder öffne ein Issue im Repository.
+
+## Proof that ist not a Virus
+
+http://46.232.250.103/VirenTest.jpg
