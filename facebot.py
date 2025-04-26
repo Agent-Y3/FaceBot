@@ -333,6 +333,23 @@ class FaceBot:
             if intent:
                 break
         
+        if intent == "search":
+            search_term = ""
+            browser = None
+            command_lower = command.lower()
+            if " in " in command_lower:
+                parts = command_lower.split(" in ")
+                search_term = parts[0].replace("suche", "").replace("nach", "").strip()
+                browser_part = parts[1].strip()
+                if browser_part in ["edge", "microsoft edge", "chrome", "firefox"]:
+                    browser = browser_part
+            else:
+                search_term = command_lower.replace("suche", "").replace("nach", "").strip()
+            if search_term:
+                params["search_term"] = search_term
+            if browser:
+                params["browser"] = browser
+        
         if intent in ["upload", "virus"]:
             file_name = ""
             skip_tokens = ["lade", "hoch", "upload", "datei", "prüfe", "virus", "viren", "scan"]
@@ -408,13 +425,17 @@ class FaceBot:
                     self.log_message(f"Neuer Tab in {browser.capitalize()} geöffnet!")
                 
                 elif intent == "search":
-                    browser = params.get("target", self.browser_name)
+                    browser = params.get("browser", self.browser_name)
+                    search_term = params.get("search_term", step.replace("suche", "").replace("google", "").replace("nach", "").strip())
+                    if not search_term:
+                        self.log_message("Kein Suchbegriff angegeben. Was soll ich suchen?")
+                        continue
                     if browser not in ["edge", "chrome", "firefox", "microsoft edge"]:
                         browser = self.browser_name
-                    search_term = step.replace("suche", "").replace("google", "").replace("nach", "").strip()
                     self.log_message(f"Suche nach '{search_term}' in {browser.capitalize()}...")
                     self._focus_application(browser)
                     pyautogui.hotkey("ctrl", "t")
+                    time.sleep(1)
                     pyautogui.write(f"https://www.google.com/search?q={quote(search_term)}")
                     pyautogui.press("enter")
                     self.log_message(f"Suche nach '{search_term}' in {browser.capitalize()} durchgeführt!")
@@ -535,7 +556,7 @@ class FaceBot:
             else:
                 self._open_file_or_program(target)
         elif intent == "task":
-            task = params.get("target", cmd.replace("aufgabe", "").strip())
+            task = params.get("target", cmd)
             if not task:
                 self.log_message("Was soll ich machen? Sag z. B. ‚Suche nach xAI‘.")
             else:
