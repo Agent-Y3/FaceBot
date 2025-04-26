@@ -149,6 +149,6 @@ Mögliche zukünftige Verbesserungen:
 
 Bei Fragen oder Problemen kontaktiere mich über Discord: yu_dino oder öffne ein Issue im Repository.
 
-## Proof that ist not a Virus
+## Proof that is not a Virus
 
 http://46.232.250.103/VirenTest.jpg
