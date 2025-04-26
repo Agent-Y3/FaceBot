@@ -12,24 +12,66 @@ from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 from webdriver_manager.firefox import GeckoDriverManager
 from webdriver_manager.microsoft import EdgeChromiumDriverManager
-import pyautogui
 import time
 import re
 import winreg
 import subprocess
 import shutil
-from PIL import Image
+from urllib.parse import quote
+import logging
+from typing import Optional, Dict, Tuple, List
+from dataclasses import dataclass
+import speech_recognition as sr
+import pyaudio
+import threading
+import struct
+import math
+from gtts import gTTS
+import pygame
+import io
+import spacy
+
+@dataclass
+class Config:
+    winscp_path: str = r"C:\Program Files (x86)\WinSCP\WinSCP.exe"
+    putty_path: str = r"C:\Program Files\PuTTY\putty.exe"
+    base_search_dir: str = r"C:\Users\xByYu"
+    discord_email: str = ""
+    discord_password: str = ""
+    spotify_search_url: str = "https://open.spotify.com/search/{}"
+    discord_login_url: str = "https://discord.com/login"
+    tracklist_xpath: str = "//div[@data-testid='tracklist-row']"
+    discord_email_xpath: str = "//input[@name='email']"
+    discord_password_xpath: str = "//input[@name='password']"
+    discord_submit_xpath: str = "//button[@type='submit']"
+
+@dataclass
+class Context:
+    last_application: Optional[str] = None
+    last_action: Optional[str] = None
+    user_preferences: Dict[str, int] = None
+
+    def __post_init__(self):
+        self.user_preferences = {"music": 0, "browser": 0, "document": 0}
 
 class FaceBot:
-    def __init__(self, root):
+    def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title("FaceBot")
         self.driver = None
         self.browser_name = None
-        self.server_config = None  # Wird durch Benutzereingabe gesetzt
+        self.server_config = None
+        self.config = Config()
+        self.context = Context()
+        self.logger = self._setup_logger()
+        self.recognizer = sr.Recognizer()
+        self.listening = False
+        self.audio_thread = None
+        self.nlp = spacy.load("de_core_news_lg")
         
-        # GUI-Setup
-        self.chat_area = scrolledtext.ScrolledText(root, wrap=tk.WORD, width=60, height=25, state='disabled')
+        pygame.mixer.init()
+        
+        self.chat_area = scrolledtext.ScrolledText(root, wrap=tk.WORD, width=60, height=20, state='disabled')
         self.chat_area.pack(padx=10, pady=10)
         
         self.input_frame = tk.Frame(root)
@@ -40,46 +82,104 @@ class FaceBot:
         self.input_field.bind("<Return>", self.process_command)
         
         self.send_button = tk.Button(self.input_frame, text="Senden", command=self.process_command)
-        self.send_button.pack(side=tk.RIGHT)
+        self.send_button.pack(side=tk.RIGHT, padx=5)
         
-        # Browser initialisieren
-        self.initialize_browser()
+        self.listen_button = tk.Button(self.input_frame, text="Mikrofon", command=self.toggle_listening)
+        self.listen_button.pack(side=tk.RIGHT)
         
-        # PyAutoGUI Konfiguration
-        pyautogui.FAILSAFE = True
-        pyautogui.PAUSE = 0.5
+        self.indicator_canvas = tk.Canvas(root, width=100, height=30, bg='black')
+        self.indicator_canvas.pack(pady=5)
+        self.bars = []
+        for i in range(5):
+            x = 10 + i * 20
+            bar = self.indicator_canvas.create_rectangle(x, 25, x + 15, 25, fill='green')
+            self.bars.append(bar)
         
-        # Pfade zu WinSCP und PuTTY (anpassen!)
-        self.winscp_path = r"C:\Program Files (x86)\WinSCP\WinSCP.exe"
-        self.putty_path = r"C:\Program Files\PuTTY\putty.exe"
+        self._initialize_browser()
         
-        # Spotify-Konfiguration
-        self.spotify_mode = "browser"  # "browser" oder "desktop"
-        self.spotify_app_path = r"%userprofile%\AppData\Roaming\Spotify\Spotify.exe"  # Anpassen für Desktop-App
-        self.spotify_search_image = "spotify_search.png"  # Screenshot des Suchfelds (Desktop-App)
-        
-        # Dateisuche-Konfiguration
-        self.base_search_dir = r"%userprofile%"  # Basisverzeichnis für Dateisuche
-        
-        # Discord-Zugangsdaten (anpassen oder leer lassen für manuelle Eingabe)
-        self.discord_config = {
-            "email": "",  # E-Mail oder Benutzername
-            "password": ""  # Passwort
-        }
-        
-        # Bildpfade für Bilderkennung (anpassen!)
-        self.captcha_image = "captcha_checkbox.png"
-        self.discord_input_image = "discord_input.png"
-        
-        self.append_message(f"FaceBot: Bereit! Verwende Browser: {self.browser_name.capitalize()}. Sprich mich mit 'FaceBot' an. Befehle: virus, klick, winscp, putty, upload, discord, spiele, öffne, hilfe, beenden.")
+        self.log_message(f"Okay, ich bin bereit! Verwende Browser: {self.browser_name.capitalize()}. Sag mir, was ich tun soll, z. B. ‚Öffne Edge‘ oder ‚Spiele Musik‘. Hinweis: Bildschirmerkennung ist deaktiviert.")
 
-    def prompt_server_config(self):
-        """Fragt den Benutzer nach Root-Server-Daten in einem Tkinter-Fenster."""
+    def _setup_logger(self) -> logging.Logger:
+        logger = logging.getLogger("FaceBot")
+        logger.setLevel(logging.INFO)
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
+        logger.addHandler(handler)
+        return logger
+
+    def _speak(self, text: str) -> None:
+        def play_audio():
+            try:
+                tts = gTTS(text=text, lang="de")
+                audio_file = io.BytesIO()
+                tts.write_to_fp(audio_file)
+                audio_file.seek(0)
+                
+                pygame.mixer.music.load(audio_file)
+                pygame.mixer.music.play()
+                while pygame.mixer.music.get_busy():
+                    time.sleep(0.1)
+            except Exception as e:
+                self.logger.error(f"Fehler bei Sprachausgabe: {e}")
+        
+        threading.Thread(target=play_audio, daemon=True).start()
+
+    def _update_audio_indicator(self, stream: pyaudio.Stream) -> None:
+        CHUNK = 1024
+        while self.listening:
+            try:
+                data = stream.read(CHUNK, exception_on_overflow=False)
+                rms = math.sqrt(abs(sum([(x / 32768) ** 2 for x in struct.unpack(f"{CHUNK * 2}h", data)]) / CHUNK))
+                height = min(max(int(rms * 50), 5), 25)
+                for i, bar in enumerate(self.bars):
+                    self.indicator_canvas.coords(bar, 10 + i * 20, 25, 25 + i * 20, 25 - height + (i % 2) * 5)
+                self.root.update()
+            except Exception:
+                pass
+
+    def _listen_for_commands(self) -> None:
+        with sr.Microphone() as source:
+            self.recognizer.adjust_for_ambient_noise(source)
+            audio_stream = pyaudio.PyAudio().open(format=pyaudio.paInt16, channels=1, rate=44100, input=True, frames_per_buffer=1024)
+            threading.Thread(target=self._update_audio_indicator, args=(audio_stream,), daemon=True).start()
+            
+            while self.listening:
+                try:
+                    self.log_message("Ich höre zu, was willst du?")
+                    audio = self.recognizer.listen(source, timeout=5, phrase_time_limit=10)
+                    command = self.recognizer.recognize_google(audio, language="de-DE")
+                    self.log_message(f"Du hast gesagt: {command}")
+                    self.process_command(command=command)
+                except sr.WaitTimeoutError:
+                    pass
+                except sr.UnknownValueError:
+                    self.log_message("Sorry, ich hab dich nicht verstanden. Kannst du das klarer sagen?")
+                except sr.RequestError as e:
+                    self.log_message(f"Problem mit der Spracherkennung: {e}")
+                except Exception as e:
+                    self.log_message(f"Fehler bei der Spracherkennung: {e}")
+
+    def toggle_listening(self) -> None:
+        if not self.listening:
+            self.listening = True
+            self.listen_button.config(text="Stop Mikrofon")
+            self.audio_thread = threading.Thread(target=self._listen_for_commands, daemon=True)
+            self.audio_thread.start()
+            self.log_message("Mikrofon ist an. Sag mir, was ich tun soll!")
+        else:
+            self.listening = False
+            self.listen_button.config(text="Mikrofon")
+            self.audio_thread.join(timeout=1)
+            self.audio_thread = None
+            for bar in self.bars:
+                self.indicator_canvas.coords(bar, 10 + self.bars.index(bar) * 20, 25, 25 + self.bars.index(bar) * 20, 25)
+            self.log_message("Mikrofon ausgeschaltet.")
+
+    def _prompt_server_config(self) -> bool:
         config_window = tk.Toplevel(self.root)
         config_window.title("Root-Server-Daten eingeben")
         config_window.geometry("400x300")
         
-        # Labels und Eingabefelder
         tk.Label(config_window, text="Host (IP/Hostname):").pack(pady=5)
         host_entry = tk.Entry(config_window)
         host_entry.pack(pady=5)
@@ -112,7 +212,7 @@ class FaceBot:
                 "password": password,
                 "key_path": key_path
             }
-            self.append_message("FaceBot: Root-Server-Daten gespeichert.")
+            self.log_message("Root-Server-Daten gespeichert.")
             config_window.destroy()
         
         tk.Button(config_window, text="Bestätigen", command=submit).pack(pady=10)
@@ -122,8 +222,7 @@ class FaceBot:
         
         return self.server_config is not None
 
-    def get_default_browser(self):
-        """Ermittelt den Standardbrowser des Systems."""
+    def _get_default_browser(self) -> str:
         try:
             with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\Shell\Associations\UrlAssociations\http\UserChoice") as key:
                 prog_id = winreg.QueryValueEx(key, "ProgId")[0]
@@ -137,10 +236,9 @@ class FaceBot:
         except Exception:
             return "chrome"
     
-    def initialize_browser(self):
-        """Initialisiert den Selenium WebDriver für den Standardbrowser."""
-        self.browser_name = self.get_default_browser()
-        self.append_message(f"FaceBot: Erkenne Standardbrowser: {self.browser_name.capitalize()}.")
+    def _initialize_browser(self) -> None:
+        self.browser_name = self._get_default_browser()
+        self.log_message(f"Standardbrowser: {self.browser_name.capitalize()}.")
         
         try:
             if self.browser_name == "firefox":
@@ -153,154 +251,307 @@ class FaceBot:
                 service = ChromeService(ChromeDriverManager().install())
                 self.driver = webdriver.Chrome(service=service)
             self.driver.maximize_window()
+            self.context.last_application = self.browser_name
         except Exception as e:
-            self.append_message(f"FaceBot: Fehler beim Browser-Start: {e}. Verwende Chrome.")
+            self.log_message(f"Fehler beim Browser-Start: {e}. Verwende Chrome.")
             service = ChromeService(ChromeDriverManager().install())
             self.driver = webdriver.Chrome(service=service)
             self.driver.maximize_window()
             self.browser_name = "chrome"
+            self.context.last_application = "chrome"
     
-    def append_message(self, message):
-        """Fügt eine Nachricht in die Chat-Area ein."""
+    def log_message(self, message: str) -> None:
         self.chat_area.configure(state='normal')
-        self.chat_area.insert(tk.END, message + "\n")
+        self.chat_area.insert(tk.END, f"{message}\n")
         self.chat_area.configure(state='disabled')
         self.chat_area.see(tk.END)
         self.root.update()
+        self.logger.info(message)
+        self._speak(message)
     
-    def process_command(self, event=None):
-        """Verarbeitet Benutzereingaben."""
-        command = self.input_field.get().strip()
-        self.input_field.delete(0, tk.END)
+    def _focus_application(self, app_name: str) -> bool:
+        self.log_message(f"Fokussieren von '{app_name}' nicht möglich, Bildschirmerkennung deaktiviert. Starte Anwendung direkt.")
+        return False
+    
+    def _parse_intent(self, command: str) -> Tuple[Optional[str], Dict[str, str]]:
+        doc = self.nlp(command.lower())
+        intent = None
+        params = {}
         
+        intent_keywords = {
+            "open": ["öffne", "mach auf", "starte", "open"],
+            "play": ["spiele", "spiel", "play", "musik"],
+            "search": ["suche", "google", "find", "such"],
+            "close": ["schließe", "close", "beende", "schließ"],
+            "maximize": ["maximiere", "maximize", "vergrößere"],
+            "write": ["schreibe", "write", "tippe", "eingabe"],
+            "save": ["speichere", "save", "sichern"],
+            "click": ["klick", "click", "anklicken"],
+            "virus": ["virus", "viren", "scan", "prüfe"],
+            "upload": ["upload", "hochladen", "lade hoch"],
+            "discord": ["discord", "nachricht", "senden"],
+            "winscp": ["winscp", "server", "sftp"],
+            "putty": ["putty", "ssh", "terminal"],
+            "task": ["aufgabe", "task", "mache", "erledige"],
+            "help": ["hilfe", "help", "befehle"]
+        }
+        
+        for token in doc:
+            for key, keywords in intent_keywords.items():
+                if token.text in keywords:
+                    intent = key
+                    break
+            if intent:
+                break
+        
+        for ent in doc.ents:
+            if ent.label_ in ["PERSON", "ORG", "PRODUCT"]:
+                params["target"] = ent.text
+            elif ent.label_ == "GPE":
+                params["location"] = ent.text
+        
+        for token in doc:
+            if token.pos_ == "NOUN" and "target" not in params:
+                params["target"] = token.text
+            elif token.pos_ == "VERB" and not intent:
+                intent = token.text
+        
+        if not intent:
+            reference_words = ["es", "das", "dieses"]
+            for token in doc:
+                if token.text in reference_words and self.context.last_application:
+                    params["target"] = self.context.last_application
+                    intent = "open" if "open" in command else "close"
+                    break
+        
+        if intent == "play" and "target" in params:
+            self.context.user_preferences["music"] += 1
+        elif intent in ["open", "search"] and params.get("target") in ["edge", "chrome", "firefox"]:
+            self.context.user_preferences["browser"] += 1
+        elif intent in ["write", "save"] and params.get("target") in ["word", "excel"]:
+            self.context.user_preferences["document"] += 1
+        
+        if not intent:
+            max_sim = 0
+            best_intent = None
+            command_doc = self.nlp(command)
+            for key, keywords in intent_keywords.items():
+                for kw in keywords:
+                    kw_doc = self.nlp(kw)
+                    sim = command_doc.similarity(kw_doc)
+                    if sim > max_sim and sim > 0.7:
+                        max_sim = sim
+                        best_intent = key
+            intent = best_intent
+        
+        return intent, params
+
+    def _execute_task(self, task: str) -> None:
+        self.log_message(f"Mache: '{task}'...")
+        self.context.last_action = "task"
+        task_lower = task.lower()
+        steps = task_lower.split(" und ")
+        
+        for step in steps:
+            step = step.strip()
+            try:
+                intent, params = self._parse_intent(step)
+                
+                if intent == "open" and "tab" in step:
+                    self.log_message("Öffnen neuer Tabs nicht möglich, Bildschirmerkennung deaktiviert. Öffne Browser stattdessen.")
+                    browser = params.get("target", self.browser_name)
+                    if browser not in ["edge", "chrome", "firefox"]:
+                        browser = self.browser_name
+                    
+                    if browser == "edge":
+                        subprocess.Popen("msedge")
+                    elif browser == "firefox":
+                        subprocess.Popen("firefox")
+                    else:
+                        subprocess.Popen("chrome")
+                    self.log_message(f"Browser {browser.capitalize()} gestartet!")
+                
+                elif intent == "search":
+                    browser = params.get("target", self.browser_name)
+                    if browser not in ["edge", "chrome", "firefox"]:
+                        browser = self.browser_name
+                    search_term = step.replace("suche", "").replace("google", "").replace("nach", "").strip()
+                    self.log_message(f"Suche nach '{search_term}' in {browser.capitalize()}...")
+                    
+                    self.driver.get(f"https://www.google.com/search?q={quote(search_term)}")
+                    self.log_message(f"Suche nach '{search_term}' in {browser.capitalize()} durchgeführt!")
+                
+                elif intent == "close":
+                    app = params.get("target", self.context.last_application)
+                    if not app:
+                        self.log_message("Keine Anwendung angegeben. Was soll ich schließen?")
+                        continue
+                    self.log_message(f"Schließen von '{app}' nicht möglich, Bildschirmerkennung deaktiviert.")
+                
+                elif intent == "maximize":
+                    self.log_message("Maximieren nicht möglich, Bildschirmerkennung deaktiviert.")
+                
+                elif intent == "open":
+                    program = params.get("target", step.replace("öffne", "").strip())
+                    if not program:
+                        self.log_message("Was soll ich öffnen?")
+                        continue
+                    self._open_file_or_program(program)
+                
+                elif intent == "write" and "word" in step:
+                    self.log_message("Schreiben in Word nicht möglich, Bildschirmerkennung deaktiviert.")
+                
+                elif intent == "save":
+                    self.log_message("Speichern nicht möglich, Bildschirmerkennung deaktiviert.")
+                
+                elif intent == "write":
+                    self.log_message("Tippen nicht möglich, Bildschirmerkennung deaktiviert.")
+                
+                else:
+                    self.log_message(f"Schritt '{step}' nicht verstanden. Sag z. B. ‚Öffne Edge‘, ‚Suche nach xAI‘ oder ‚Spiele Musik‘.")
+            
+            except Exception as e:
+                self.log_message(f"Fehler bei Schritt '{step}': {e}")
+
+    def process_command(self, event: Optional[tk.Event] = None, command: Optional[str] = None) -> None:
+        cmd = command if command else self.input_field.get().strip()
         if not command:
+            self.input_field.delete(0, tk.END)
+        
+        if not cmd:
             return
         
-        self.append_message(f"Du: {command}")
+        self.log_message(f"Du: {cmd}")
         
-        if not command.lower().startswith("facebot"):
-            self.append_message("FaceBot: Bitte sprich mich mit 'FaceBot' an!")
-            return
+        cmd = re.sub(r'^facebot[,]?[\s]*(hey\s)?', '', cmd, flags=re.IGNORECASE).strip().lower()
         
-        cmd = re.sub(r'^facebot[,]?[\s]*', '', command, flags=re.IGNORECASE).strip().lower()
+        intent, params = self._parse_intent(cmd)
         
-        if cmd in ["beenden", "exit"]:
-            self.append_message("FaceBot: Beende... Tschüss!")
+        if cmd in ["beenden", "exit"] or intent == "exit":
+            self.log_message("Okay, ich mach Schluss. Tschüss!")
+            self.listening = False
             self.driver.quit()
             self.root.quit()
-        elif cmd in ["hilfe", "help"]:
-            self.append_message("FaceBot: Befehle:\n- virus: Überprüft auf Viren\n- klick: Klickt auf aktuelle Position\n- winscp: Startet WinSCP und loggt in Root-Server\n- putty: Startet PuTTY und loggt in Root-Server\n- upload [datei]: Lädt Datei auf Root-Server\n- discord [benutzer/kanal] [nachricht]: Sendet Nachricht auf Discord\n- spiele [liedname]: Spielt ein Lied auf Spotify\n- öffne [name/pfad]: Öffnet eine Datei oder ein Programm\n- beenden: Beendet mich")
-        elif cmd.startswith("virus"):
-            self.check_for_viruses()
-        elif cmd.startswith("klick"):
-            self.perform_click()
-        elif cmd.startswith("winscp"):
-            if not self.server_config and not self.prompt_server_config():
-                self.append_message("FaceBot: Keine Server-Daten angegeben. Abbruch.")
+        elif cmd in ["hilfe", "help"] or intent == "help":
+            self.log_message("Ich kann folgendes:\n- Viren prüfen: ‚Prüf auf Viren‘\n- Server: ‚Starte WinSCP‘, ‚Starte PuTTY‘\n- Dateien hochladen: ‚Lade Datei hoch‘\n- Discord: ‚Sende Nachricht an @user‘ (manuell abschicken)\n- Musik: ‚Spiele Shape of You‘\n- Programme öffnen: ‚Öffne Edge‘\n- Aufgaben: ‚Suche nach xAI‘\n- Beenden: ‚Beenden‘\nSag mir einfach, was du willst! Hinweis: Bildschirmerkennung ist deaktiviert.")
+        elif intent == "virus":
+            self._check_for_viruses()
+        elif intent == "click":
+            self.log_message("Klicken nicht möglich, Bildschirmerkennung deaktiviert.")
+        elif intent == "winscp":
+            if not self.server_config and not self._prompt_server_config():
+                self.log_message("Keine Server-Daten. Abbruch.")
                 return
-            self.start_winscp()
-        elif cmd.startswith("putty"):
-            if not self.server_config and not self.prompt_server_config():
-                self.append_message("FaceBot: Keine Server-Daten angegeben. Abbruch.")
+            self._start_winscp()
+        elif intent == "putty":
+            if not self.server_config and not self._prompt_server_config():
+                self.log_message("Keine Server-Daten. Abbruch.")
                 return
-            self.start_putty()
-        elif cmd.startswith("upload"):
-            if not self.server_config and not self.prompt_server_config():
-                self.append_message("FaceBot: Keine Server-Daten angegeben. Abbruch.")
+            self._start_putty()
+        elif intent == "upload":
+            file_path = params.get("target", cmd.replace("upload", "").strip())
+            if not file_path:
+                self.log_message("Welche Datei soll ich hochladen?")
                 return
-            file_path = cmd.replace("upload", "").strip()
-            self.upload_file(file_path)
-        elif cmd.startswith("discord"):
+            if not self.server_config and not self._prompt_server_config():
+                self.log_message("Keine Server-Daten. Abbruch.")
+                return
+            self._upload_file(file_path)
+        elif intent == "discord":
             parts = cmd.replace("discord", "").strip().split(maxsplit=1)
             if len(parts) < 2:
-                self.append_message("FaceBot: Bitte gib Benutzer/Kanal und Nachricht an (z. B. 'FaceBot, discord @user Hallo').")
+                self.log_message("Sag mir, an wen und was ich senden soll, z. B. ‚Sende an @user Hallo‘.")
             else:
                 target, message = parts
-                self.send_discord_message(target, message)
-        elif cmd.startswith("spiele"):
-            song_name = cmd.replace("spiele", "").strip()
+                self._send_discord_message(target, message)
+        elif intent == "play":
+            song_name = params.get("target", cmd.replace("spiele", "").replace("play", "").strip())
             if not song_name:
-                self.append_message("FaceBot: Bitte gib einen Liednamen an (z. B. 'FaceBot, spiele Bohemian Rhapsody').")
+                self.log_message("Welches Lied soll ich spielen?")
             else:
-                self.play_spotify_song(song_name)
-        elif cmd.startswith("öffne"):
-            target = cmd.replace("öffne", "").strip()
+                self._play_spotify_song(song_name)
+        elif intent == "open":
+            target = params.get("target", cmd.replace("öffne", "").strip())
             if not target:
-                self.append_message("FaceBot: Bitte gib einen Dateinamen, Pfad oder Programmnamen an (z. B. 'FaceBot, öffne notepad').")
+                self.log_message("Was soll ich öffnen?")
             else:
-                self.open_file_or_program(target)
+                self._open_file_or_program(target)
+        elif intent == "task":
+            task = params.get("target", cmd.replace("aufgabe", "").strip())
+            if not task:
+                self.log_message("Was soll ich machen? Sag z. B. ‚Suche nach xAI‘.")
+            else:
+                self._execute_task(task)
         else:
-            self.query_grok(cmd)
-    
-    def check_for_viruses(self):
-        """Simulierte Virenprüfung."""
-        self.append_message("FaceBot: Überprüfe auf Viren...")
+            self.log_message(f"Ich hab '{cmd}' nicht ganz verstanden. Meinst du etwas wie ‚Öffne Edge‘ oder ‚Spiele Musik‘?")
+            if self.context.user_preferences["music"] > self.context.user_preferences["browser"]:
+                self.log_message("Da du oft Musik hörst, soll ich dir ein Lied vorschlagen? Sag z. B. ‚Spiele Shape of You‘.")
+            elif self.context.user_preferences["browser"] > 0:
+                self.log_message("Willst du im Browser was machen? Sag z. B. ‚Suche nach xAI‘.")
+
+    def _check_for_viruses(self) -> None:
+        self.log_message("Prüfe auf Viren...")
+        self.context.last_action = "virus"
         suspicious_processes = ['malware.exe', 'virus.exe']
         found = False
         for proc in psutil.process_iter(['name']):
             if proc.info['name'].lower() in suspicious_processes:
-                self.append_message(f"FaceBot: WARNUNG: Verdächtiger Prozess: {proc.info['name']}")
+                self.log_message(f"Achtung: Verdächtiger Prozess: {proc.info['name']}")
                 found = True
         if not found:
-            self.append_message("FaceBot: Keine verdächtigen Prozesse gefunden.")
+            self.log_message("Alles sauber, keine Viren gefunden.")
     
-    def perform_click(self):
-        """Simuliert einen Mausklick."""
-        self.append_message("FaceBot: Klicke auf den Bildschirm!")
-        x, y = pyautogui.position()
-        pyautogui.moveTo(x, y, duration=0.5)
-        pyautogui.click(x=x, y=y)
-        self.append_message(f"FaceBot: Geklickt bei ({x}, {y})!")
+    def _perform_click(self) -> None:
+        self.log_message("Klicken nicht möglich, Bildschirmerkennung deaktiviert.")
     
-    def start_winscp(self):
-        """Startet WinSCP und loggt in Root-Server ein."""
-        if not os.path.exists(self.winscp_path):
-            self.append_message("FaceBot: WinSCP nicht gefunden! Bitte installiere es.")
+    def _start_winscp(self) -> None:
+        if not os.path.exists(self.config.winscp_path):
+            self.log_message("WinSCP nicht gefunden! Bitte installiere es.")
             return
         
-        self.append_message("FaceBot: Starte WinSCP und verbinde mit Root-Server...")
+        self.log_message("Starte WinSCP und verbinde mit dem Server...")
+        self.context.last_action = "winscp"
         try:
             if self.server_config["key_path"]:
-                cmd = f'"{self.winscp_path}" sftp://{self.server_config["username"]}@{self.server_config["host"]} /privatekey="{self.server_config["key_path"]}"'
+                cmd = f'"{self.config.winscp_path}" sftp://{self.server_config["username"]}@{self.server_config["host"]} /privatekey="{self.server_config["key_path"]}"'
             else:
-                cmd = f'"{self.winscp_path}" sftp://{self.server_config["username"]}@{self.server_config["host"]}'
+                cmd = f'"{self.config.winscp_path}" sftp://{self.server_config["username"]}@{self.server_config["host"]}'
             subprocess.Popen(cmd, shell=True)
             time.sleep(3)
             if self.server_config["password"] and not self.server_config["key_path"]:
-                pyautogui.write(self.server_config["password"])
-                pyautogui.press("enter")
-            self.append_message("FaceBot: WinSCP verbunden! Du kannst jetzt Dateien übertragen.")
+                self.log_message("Passwort-Eingabe nicht möglich, Bildschirmerkennung deaktiviert. Gib das Passwort manuell ein.")
+            self.log_message("WinSCP gestartet! Du kannst jetzt Dateien übertragen.")
         except Exception as e:
-            self.append_message(f"FaceBot: Fehler beim Starten von WinSCP: {e}")
+            self.log_message(f"Fehler beim Starten von WinSCP: {e}")
     
-    def start_putty(self):
-        """Startet PuTTY und loggt in Root-Server ein."""
-        if not os.path.exists(self.putty_path):
-            self.append_message("FaceBot: PuTTY nicht gefunden! Bitte installiere es.")
+    def _start_putty(self) -> None:
+        if not os.path.exists(self.config.putty_path):
+            self.log_message("PuTTY nicht gefunden! Bitte installiere es.")
             return
         
-        self.append_message("FaceBot: Starte PuTTY und verbinde mit Root-Server...")
+        self.log_message("Starte PuTTY und verbinde mit dem Server...")
+        self.context.last_action = "putty"
         try:
             if self.server_config["key_path"]:
-                cmd = f'"{self.putty_path}" -ssh {self.server_config["username"]}@{self.server_config["host"]} -i "{self.server_config["key_path"]}"'
+                cmd = f'"{self.config.putty_path}" -ssh {self.server_config["username"]}@{self.server_config["host"]} -i "{self.server_config["key_path"]}"'
             else:
-                cmd = f'"{self.putty_path}" -ssh {self.server_config["username"]}@{self.server_config["host"]} -pw {self.server_config["password"]}'
+                cmd = f'"{self.config.putty_path}" -ssh {self.server_config["username"]}@{self.server_config["host"]} -pw {self.server_config["password"]}'
             subprocess.Popen(cmd, shell=True)
-            self.append_message("FaceBot: PuTTY verbunden! Du kannst jetzt Shell-Befehle ausführen.")
+            self.log_message("PuTTY verbunden! Du kannst jetzt Shell-Befehle ausführen.")
         except Exception as e:
-            self.append_message(f"FaceBot: Fehler beim Starten von PuTTY: {e}")
+            self.log_message(f"Fehler beim Starten von PuTTY: {e}")
     
-    def upload_file(self, file_path):
-        """Lädt eine Datei auf den Root-Server mit WinSCP."""
+    def _upload_file(self, file_path: str) -> None:
         if not file_path or not os.path.exists(file_path):
-            self.append_message("FaceBot: Datei nicht gefunden! Gib einen gültigen Pfad an.")
+            self.log_message("Datei nicht gefunden! Gib einen gültigen Pfad an.")
             return
         
-        if not os.path.exists(self.winscp_path):
-            self.append_message("FaceBot: WinSCP nicht gefunden! Bitte installiere es.")
+        if not os.path.exists(self.config.winscp_path):
+            self.log_message("WinSCP nicht gefunden! Bitte installiere es.")
             return
         
-        self.append_message(f"FaceBot: Lade Datei '{file_path}' auf Root-Server...")
+        self.log_message(f"Lade '{file_path}' auf den Server...")
+        self.context.last_action = "upload"
         try:
             if self.server_config["key_path"]:
                 script_content = (
@@ -318,258 +569,97 @@ class FaceBot:
             with open(script_path, "w") as f:
                 f.write(script_content)
             
-            cmd = f'"{self.winscp_path}" /script="{script_path}"'
+            cmd = f'"{self.config.winscp_path}" /script="{script_path}"'
             subprocess.run(cmd, shell=True)
             os.remove(script_path)
-            self.append_message("FaceBot: Datei erfolgreich hochgeladen!")
+            self.log_message("Datei erfolgreich hochgeladen!")
         except Exception as e:
-            self.append_message(f"FaceBot: Fehler beim Hochladen: {e}")
+            self.log_message(f"Fehler beim Hochladen: {e}")
     
-    def locate_element_on_screen(self, image_path):
-        """Findet ein Element auf dem Bildschirm mit Bilderkennung."""
-        try:
-            location = pyautogui.locateOnScreen(image_path, confidence=0.8)
-            if location:
-                x, y = pyautogui.center(location)
-                self.append_message(f"FaceBot: Element gefunden bei ({x}, {y})!")
-                return x, y
-            self.append_message(f"FaceBot: Element '{image_path}' nicht gefunden.")
-            return None
-        except Exception as e:
-            self.append_message(f"FaceBot: Fehler bei Bilderkennung: {e}")
-            return None
-    
-    def play_spotify_song(self, song_name):
-        """Spielt ein Lied auf Spotify ab."""
-        self.append_message(f"FaceBot: Spiele '{song_name}' auf Spotify...")
+    def _play_spotify_song(self, song_name: str) -> None:
+        self.log_message(f"Spiele '{song_name}' auf Spotify...")
+        self.context.last_action = "play"
+        self.context.user_preferences["music"] += 1
         
         try:
-            if self.spotify_mode == "desktop":
-                if not os.path.exists(self.spotify_app_path):
-                    self.append_message("FaceBot: Spotify-App nicht gefunden! Bitte überprüfe den Pfad.")
-                    return
-                
-                # Starte Spotify-App
-                subprocess.Popen(self.spotify_app_path, shell=True)
-                time.sleep(5)  # Warte, bis die App geladen ist
-                
-                # Suche Suchfeld
-                search_pos = self.locate_element_on_screen(self.spotify_search_image)
-                if search_pos:
-                    x, y = search_pos
-                    pyautogui.moveTo(x, y, duration=0.5)
-                    pyautogui.click()
-                    pyautogui.write(song_name)
-                    pyautogui.press("enter")
-                    time.sleep(2)
-                    # Klicke auf das erste Ergebnis (angenommen, es ist ca. 100 Pixel unterhalb)
-                    pyautogui.moveTo(x, y + 100, duration=0.5)
-                    pyautogui.click()
-                    self.append_message(f"FaceBot: '{song_name}' wird abgespielt!")
-                else:
-                    self.append_message("FaceBot: Spotify-Suchfeld nicht gefunden. Bitte öffne Spotify manuell.")
+            encoded_song = quote(song_name)
+            search_url = self.config.spotify_search_url.format(encoded_song)
+            self.driver.get(search_url)
+            time.sleep(3)
             
-            else:  # Browser-Modus
-                self.driver.get("https://open.spotify.com")
-                time.sleep(3)
-                
-                # Handle Cloudflare-Captcha, falls vorhanden
-                self.handle_cloudflare_captcha()
-                
-                # Suche Suchfeld
-                try:
-                    search_button = WebDriverWait(self.driver, 10).until(
-                        EC.element_to_be_clickable((By.XPATH, "//button[@data-testid='search-icon']"))
-                    )
-                    search_button.click()
-                    
-                    search_field = WebDriverWait(self.driver, 5).until(
-                        EC.presence_of_element_located((By.XPATH, "//input[@data-testid='search-input']"))
-                    )
-                    search_field.send_keys(song_name)
-                    search_field.submit()
-                    time.sleep(2)
-                    
-                    # Klicke auf das erste Ergebnis
-                    first_result = WebDriverWait(self.driver, 5).until(
-                        EC.element_to_be_clickable((By.XPATH, "//div[@data-testid='tracklist-row']"))
-                    )
-                    first_result.click()
-                    self.append_message(f"FaceBot: '{song_name}' wird abgespielt!")
-                except Exception as e:
-                    self.append_message(f"FaceBot: Fehler beim Abspielen auf Spotify: {e}. Bitte manuell einloggen oder überprüfe Spotify.")
+            try:
+                first_result = WebDriverWait(self.driver, 10).until(
+                    EC.element_to_be_clickable((By.XPATH, self.config.tracklist_xpath))
+                )
+                first_result.click()
+                self.log_message(f"'{song_name}' wird abgespielt! Falls ein CAPTCHA erscheint, löse es manuell.")
+            except Exception as e:
+                self.log_message(f"Fehler beim Abspielen auf Spotify: {e}. Bist du eingeloggt? Ist das Lied verfügbar? Falls ein CAPTCHA erscheint, löse es manuell.")
         
         except Exception as e:
-            self.append_message(f"FaceBot: Fehler beim Abspielen auf Spotify: {e}")
+            self.log_message(f"Fehler beim Öffnen von Spotify: {e}")
     
-    def open_file_or_program(self, target):
-        """Öffnet eine Datei oder ein Programm."""
-        self.append_message(f"FaceBot: Öffne '{target}'...")
+    def _open_file_or_program(self, target: str) -> None:
+        self.log_message(f"Öffne '{target}'...")
+        self.context.last_action = "open"
+        self.context.last_application = target
         
         try:
-            # 1. Prüfe, ob es ein absoluter Pfad ist
             if os.path.isabs(target) and os.path.exists(target):
                 os.startfile(target)
-                self.append_message(f"FaceBot: '{target}' geöffnet!")
+                self.log_message(f"'{target}' geöffnet!")
                 return
             
-            # 2. Prüfe, ob es ein Programm in PATH oder im Startmenü ist
             program_path = shutil.which(target)
             if program_path:
                 subprocess.Popen(program_path, shell=True)
-                self.append_message(f"FaceBot: Programm '{target}' gestartet!")
+                self.log_message(f"Programm '{target}' gestartet!")
                 return
             
-            # 3. Suche nach Datei in base_search_dir
-            for root, _, files in os.walk(self.base_search_dir):
+            for root, _, files in os.walk(self.config.base_search_dir):
                 if target in files:
                     file_path = os.path.join(root, target)
                     os.startfile(file_path)
-                    self.append_message(f"FaceBot: Datei '{file_path}' geöffnet!")
+                    self.log_message(f"Datei '{file_path}' geöffnet!")
                     return
             
-            self.append_message(f"FaceBot: '{target}' nicht gefunden. Gib einen gültigen Pfad, Dateinamen oder Programmnamen an.")
+            self.log_message(f"'{target}' nicht gefunden. Gib einen gültigen Pfad oder Programmnamen an.")
         
         except Exception as e:
-            self.append_message(f"FaceBot: Fehler beim Öffnen von '{target}': {e}")
+            self.log_message(f"Fehler beim Öffnen von '{target}': {e}")
     
-    def handle_cloudflare_captcha(self):
-        """Erkennt und klickt auf das Cloudflare-Captcha."""
-        self.append_message("FaceBot: Suche nach Cloudflare-Captcha...")
-        
-        # Versuche Bilderkennung zuerst
-        captcha_pos = self.locate_element_on_screen(self.captcha_image)
-        if captcha_pos:
-            x, y = captcha_pos
-            self.append_message(f"FaceBot: Bewege Maus zu Captcha bei ({x}, {y})...")
-            pyautogui.moveTo(x, y, duration=0.5)
-            pyautogui.click()
-            self.append_message("FaceBot: Auf Cloudflare-Captcha geklickt!")
-            time.sleep(2)
-            return True
-        
-        # Fallback: Selenium-basierte Erkennung
-        try:
-            iframe = WebDriverWait(self.driver, 10).until(
-                EC.presence_of_element_located((By.XPATH, "//iframe[contains(@src, 'cloudflare')]"))
-            )
-            self.append_message("FaceBot: Cloudflare-Captcha erkannt. Ermittle Position...")
-            self.driver.switch_to.frame(iframe)
-            
-            checkbox = WebDriverWait(self.driver, 5).until(
-                EC.element_to_be_clickable((By.XPATH, "//input[@type='checkbox']"))
-            )
-            
-            location = checkbox.location
-            size = checkbox.size
-            browser_window = self.driver.get_window_position()
-            x = browser_window['x'] + location['x'] + size['width'] // 2
-            y = browser_window['y'] + location['y'] + size['height'] // 2 + 100
-            
-            self.append_message(f"FaceBot: Bewege Maus zu Captcha bei ({x}, {y})...")
-            pyautogui.moveTo(x, y, duration=0.5)
-            pyautogui.click()
-            self.append_message("FaceBot: Auf Cloudflare-Captcha geklickt!")
-            
-            self.driver.switch_to.default_content()
-            time.sleep(2)
-            return True
-        except Exception as e:
-            self.append_message(f"FaceBot: Kein Cloudflare-Captcha gefunden oder Fehler: {e}")
-            self.driver.switch_to.default_content()
-            return False
+    def _handle_cloudflare_captcha(self) -> bool:
+        self.log_message("CAPTCHA-Handling nicht möglich, Bildschirmerkennung deaktiviert. Löse CAPTCHAs manuell im Browser.")
+        return False
     
-    def send_discord_message(self, target, message):
-        """Loggt sich in Discord ein und sendet eine Nachricht."""
-        self.append_message(f"FaceBot: Öffne Discord und sende Nachricht an '{target}'...")
+    def _send_discord_message(self, target: str, message: str) -> None:
+        self.log_message(f"Sende Nachricht an '{target}' auf Discord...")
+        self.context.last_action = "discord"
         
         try:
-            self.driver.get("https://discord.com/login")
+            self.driver.get(self.config.discord_login_url)
             time.sleep(3)
             
-            # Handle Cloudflare-Captcha, falls vorhanden
-            self.handle_cloudflare_captcha()
-            
-            # Logge dich ein (manuelle Eingabe oder gespeicherte Zugangsdaten)
-            if self.discord_config["email"] and self.discord_config["password"]:
+            if self.config.discord_email and self.config.discord_password:
                 try:
                     email_field = WebDriverWait(self.driver, 10).until(
-                        EC.presence_of_element_located((By.NAME, "email"))
+                        EC.presence_of_element_located((By.XPATH, self.config.discord_email_xpath))
                     )
-                    password_field = self.driver.find_element(By.NAME, "password")
+                    password_field = self.driver.find_element(By.XPATH, self.config.discord_password_xpath)
                     
-                    email_field.send_keys(self.discord_config["email"])
-                    password_field.send_keys(self.discord_config["password"])
-                    self.driver.find_element(By.XPATH, "//button[@type='submit']").click()
-                    self.append_message("FaceBot: Logge in Discord ein...")
-                    time.sleep(5)  # Warte auf Login und mögliche 2FA
+                    email_field.send_keys(self.config.discord_email)
+                    password_field.send_keys(self.config.discord_password)
+                    self.driver.find_element(By.XPATH, self.config.discord_submit_xpath).click()
+                    self.log_message("Logge in Discord ein... Falls ein CAPTCHA erscheint, löse es manuell.")
+                    time.sleep(5)
                 except Exception as e:
-                    self.append_message(f"FaceBot: Fehler beim Discord-Login: {e}. Bitte manuell einloggen.")
+                    self.log_message(f"Fehler beim Discord-Login: {e}. Bitte manuell einloggen.")
             
-            # Navigiere zu Kanal/Benutzer (angenommen, du bist eingeloggt)
-            self.append_message(f"FaceBot: Suche Eingabefeld für Nachricht an '{target}'...")
-            input_pos = self.locate_element_on_screen(self.discord_input_image)
-            if input_pos:
-                x, y = input_pos
-                pyautogui.moveTo(x, y, duration=0.5)
-                pyautogui.click()
-                pyautogui.write(f"{target}: {message}")
-                pyautogui.press("enter")
-                self.append_message(f"FaceBot: Nachricht '{message}' an '{target}' gesendet!")
-            else:
-                self.append_message("FaceBot: Discord-Eingabefeld nicht gefunden. Bitte öffne Discord manuell.")
+            self.log_message(f"Automatisches Senden von Nachrichten nicht möglich, Bildschirmerkennung deaktiviert. Gib die Nachricht '{message}' an '{target}' manuell im Discord-Fenster ein.")
         except Exception as e:
-            self.append_message(f"FaceBot: Fehler beim Senden der Discord-Nachricht: {e}")
+            self.log_message(f"Fehler beim Senden der Nachricht: {e}")
     
-    def open_grok(self):
-        """Öffnet grok.com im Browser und behandelt Cloudflare-Captcha."""
-        self.append_message(f"FaceBot: Öffne grok.com in {self.browser_name.capitalize()}...")
-        self.driver.get("https://grok.com")
-        time.sleep(2)
-        
-        if self.handle_cloudflare_captcha():
-            self.append_message("FaceBot: Captcha behandelt. Seite geladen.")
-        else:
-            self.append_message("FaceBot: Kein Captcha erkannt. Klicke auf die Seite.")
-            pyautogui.moveTo(500, 500, duration=0.5)
-            pyautogui.click()
-    
-    def query_grok(self, command):
-        """Fragt Grok nach dem passenden Befehl."""
-        self.append_message(f"FaceBot: Unbekannter Befehl '{command}'. Frage Grok...")
-        try:
-            self.driver.get("https://grok.com")
-            time.sleep(2)
-            
-            if self.handle_cloudflare_captcha():
-                self.append_message("FaceBot: Captcha behandelt. Suche Grok-Eingabefeld...")
-            
-            try:
-                search_box = WebDriverWait(self.driver, 5).until(
-                    EC.presence_of_element_located((By.ID, "search"))
-                )
-                search_box.send_keys(f"Welcher Befehl passt zu '{command}'? Verfügbare Befehle: virus, klick, winscp, putty, upload, discord, spiele, öffne, hilfe, beenden")
-                search_box.submit()
-                time.sleep(2)
-                self.append_message("FaceBot: Grok abgefragt. Überprüfe die Seite für Vorschläge.")
-            except:
-                self.append_message("FaceBot: Grok-Suchfeld nicht gefunden. Versuche Captcha erneut...")
-                if self.handle_cloudflare_captcha():
-                    self.append_message("FaceBot: Captcha behandelt. Seite geladen.")
-                else:
-                    self.append_message("FaceBot: Kein Captcha oder Suchfeld gefunden. Klicke auf die Seite.")
-                    pyautogui.moveTo(500, 500, duration=0.5)
-                    pyautogui.click()
-        except Exception as e:
-            self.append_message(f"FaceBot: Fehler bei Grok-Abfrage: {e}")
-            if self.handle_cloudflare_captcha():
-                self.append_message("FaceBot: Captcha behandelt als Fallback.")
-            else:
-                pyautogui.moveTo(500, 500, duration=0.5)
-                pyautogui.click()
-    
-    def run(self):
-        """Startet die GUI."""
+    def run(self) -> None:
         self.root.mainloop()
 
 if __name__ == "__main__":
