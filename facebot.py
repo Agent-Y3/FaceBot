@@ -30,12 +30,16 @@ from gtts import gTTS
 import pygame
 import io
 import spacy
+import pyautogui
+
+pyautogui.FAILSAFE = True
+pyautogui.PAUSE = 0.5
 
 @dataclass
 class Config:
     winscp_path: str = r"C:\Program Files (x86)\WinSCP\WinSCP.exe"
     putty_path: str = r"C:\Program Files\PuTTY\putty.exe"
-    base_search_dir: str = r"C:\Users\xByYu"
+    base_search_dir: str = os.path.expandvars(r"%userprofile%")
     discord_email: str = ""
     discord_password: str = ""
     spotify_search_url: str = "https://open.spotify.com/search/{}"
@@ -97,7 +101,7 @@ class FaceBot:
         
         self._initialize_browser()
         
-        self.log_message(f"Okay, ich bin bereit! Verwende Browser: {self.browser_name.capitalize()}. Sag mir, was ich tun soll, z. B. ‚Öffne Edge‘ oder ‚Spiele Musik‘. Hinweis: Bildschirmerkennung ist deaktiviert.")
+        self.log_message(f"Okay, ich bin bereit! Verwende Browser: {self.browser_name.capitalize()}. Sag mir, was ich tun soll, z. B. ‚Öffne Edge‘ oder ‚Spiele Musik‘.")
 
     def _setup_logger(self) -> logging.Logger:
         logger = logging.getLogger("FaceBot")
@@ -270,8 +274,32 @@ class FaceBot:
         self._speak(message)
     
     def _focus_application(self, app_name: str) -> bool:
-        self.log_message(f"Fokussieren von '{app_name}' nicht möglich, Bildschirmerkennung deaktiviert. Starte Anwendung direkt.")
-        return False
+        try:
+            app_map = {
+                "edge": "Microsoft Edge",
+                "microsoft edge": "Microsoft Edge",
+                "chrome": "Google Chrome",
+                "firefox": "Firefox",
+                "word": "Microsoft Word",
+                "excel": "Microsoft Excel",
+                "notepad": "Notepad",
+                "winscp": "WinSCP"
+            }
+            window_title = app_map.get(app_name.lower(), app_name)
+            pyautogui.hotkey("alt", "tab")
+            time.sleep(1)
+            for _ in range(5):
+                if window_title.lower() in pyautogui.getActiveWindowTitle().lower():
+                    self.log_message(f"Anwendung '{app_name}' fokussiert.")
+                    return True
+                pyautogui.hotkey("alt", "tab")
+                time.sleep(0.5)
+            self.log_message(f"Anwendung '{app_name}' nicht gefunden. Starte sie...")
+            self._open_file_or_program(app_name)
+            return True
+        except Exception as e:
+            self.log_message(f"Fehler beim Fokussieren von '{app_name}': {e}")
+            return False
     
     def _parse_intent(self, command: str) -> Tuple[Optional[str], Dict[str, str]]:
         doc = self.nlp(command.lower())
@@ -287,8 +315,9 @@ class FaceBot:
             "write": ["schreibe", "write", "tippe", "eingabe"],
             "save": ["speichere", "save", "sichern"],
             "click": ["klick", "click", "anklicken"],
+            "browser": ["browser", "edge", "microsoft edge", "chrome", "firefox"],
             "virus": ["virus", "viren", "scan", "prüfe"],
-            "upload": ["upload", "hochladen", "lade hoch"],
+            "upload": ["upload", "hochladen", "lade hoch", "lade datei"],
             "discord": ["discord", "nachricht", "senden"],
             "winscp": ["winscp", "server", "sftp"],
             "putty": ["putty", "ssh", "terminal"],
@@ -304,17 +333,27 @@ class FaceBot:
             if intent:
                 break
         
-        for ent in doc.ents:
-            if ent.label_ in ["PERSON", "ORG", "PRODUCT"]:
-                params["target"] = ent.text
-            elif ent.label_ == "GPE":
-                params["location"] = ent.text
-        
-        for token in doc:
-            if token.pos_ == "NOUN" and "target" not in params:
-                params["target"] = token.text
-            elif token.pos_ == "VERB" and not intent:
-                intent = token.text
+        if intent in ["upload", "virus"]:
+            file_name = ""
+            skip_tokens = ["lade", "hoch", "upload", "datei", "prüfe", "virus", "viren", "scan"]
+            for token in doc:
+                if token.text not in skip_tokens and token.pos_ in ["NOUN", "PROPN"]:
+                    file_name += token.text + " "
+            file_name = file_name.strip()
+            if file_name:
+                params["file"] = file_name
+        else:
+            for ent in doc.ents:
+                if ent.label_ in ["PERSON", "ORG", "PRODUCT"]:
+                    params["target"] = ent.text
+                elif ent.label_ == "GPE":
+                    params["location"] = ent.text
+            
+            for token in doc:
+                if token.pos_ == "NOUN" and "target" not in params:
+                    params["target"] = token.text
+                elif token.pos_ == "VERB" and not intent:
+                    intent = token.text
         
         if not intent:
             reference_words = ["es", "das", "dieses"]
@@ -322,11 +361,14 @@ class FaceBot:
                 if token.text in reference_words and self.context.last_application:
                     params["target"] = self.context.last_application
                     intent = "open" if "open" in command else "close"
+                elif token.text in ["edge", "microsoft"]:
+                    params["target"] = "microsoft edge"
+                    intent = "open"
                     break
         
         if intent == "play" and "target" in params:
             self.context.user_preferences["music"] += 1
-        elif intent in ["open", "search"] and params.get("target") in ["edge", "chrome", "firefox"]:
+        elif intent in ["open", "search"] and params.get("target") in ["edge", "chrome", "firefox", "microsoft edge"]:
             self.context.user_preferences["browser"] += 1
         elif intent in ["write", "save"] and params.get("target") in ["word", "excel"]:
             self.context.user_preferences["document"] += 1
@@ -358,27 +400,23 @@ class FaceBot:
                 intent, params = self._parse_intent(step)
                 
                 if intent == "open" and "tab" in step:
-                    self.log_message("Öffnen neuer Tabs nicht möglich, Bildschirmerkennung deaktiviert. Öffne Browser stattdessen.")
                     browser = params.get("target", self.browser_name)
-                    if browser not in ["edge", "chrome", "firefox"]:
+                    if browser not in ["edge", "chrome", "firefox", "microsoft edge"]:
                         browser = self.browser_name
-                    
-                    if browser == "edge":
-                        subprocess.Popen("msedge")
-                    elif browser == "firefox":
-                        subprocess.Popen("firefox")
-                    else:
-                        subprocess.Popen("chrome")
-                    self.log_message(f"Browser {browser.capitalize()} gestartet!")
+                    self._focus_application(browser)
+                    pyautogui.hotkey("ctrl", "t")
+                    self.log_message(f"Neuer Tab in {browser.capitalize()} geöffnet!")
                 
                 elif intent == "search":
                     browser = params.get("target", self.browser_name)
-                    if browser not in ["edge", "chrome", "firefox"]:
+                    if browser not in ["edge", "chrome", "firefox", "microsoft edge"]:
                         browser = self.browser_name
                     search_term = step.replace("suche", "").replace("google", "").replace("nach", "").strip()
                     self.log_message(f"Suche nach '{search_term}' in {browser.capitalize()}...")
-                    
-                    self.driver.get(f"https://www.google.com/search?q={quote(search_term)}")
+                    self._focus_application(browser)
+                    pyautogui.hotkey("ctrl", "t")
+                    pyautogui.write(f"https://www.google.com/search?q={quote(search_term)}")
+                    pyautogui.press("enter")
                     self.log_message(f"Suche nach '{search_term}' in {browser.capitalize()} durchgeführt!")
                 
                 elif intent == "close":
@@ -386,10 +424,18 @@ class FaceBot:
                     if not app:
                         self.log_message("Keine Anwendung angegeben. Was soll ich schließen?")
                         continue
-                    self.log_message(f"Schließen von '{app}' nicht möglich, Bildschirmerkennung deaktiviert.")
+                    self._focus_application(app)
+                    pyautogui.hotkey("alt", "f4")
+                    self.log_message(f"Anwendung '{app}' geschlossen.")
                 
                 elif intent == "maximize":
-                    self.log_message("Maximieren nicht möglich, Bildschirmerkennung deaktiviert.")
+                    app = params.get("target", self.context.last_application)
+                    if not app:
+                        self.log_message("Keine Anwendung angegeben. Was soll ich maximieren?")
+                        continue
+                    self._focus_application(app)
+                    pyautogui.hotkey("win", "up")
+                    self.log_message(f"Anwendung '{app}' maximiert.")
                 
                 elif intent == "open":
                     program = params.get("target", step.replace("öffne", "").strip())
@@ -399,13 +445,24 @@ class FaceBot:
                     self._open_file_or_program(program)
                 
                 elif intent == "write" and "word" in step:
-                    self.log_message("Schreiben in Word nicht möglich, Bildschirmerkennung deaktiviert.")
+                    text = step.replace("schreibe", "").replace("in word", "").strip()
+                    self._focus_application("word")
+                    pyautogui.write(text)
+                    self.log_message(f"Text '{text}' in Word geschrieben.")
                 
                 elif intent == "save":
-                    self.log_message("Speichern nicht möglich, Bildschirmerkennung deaktiviert.")
+                    app = params.get("target", self.context.last_application)
+                    if not app:
+                        self.log_message("Keine Anwendung angegeben. Was soll ich speichern?")
+                        continue
+                    self._focus_application(app)
+                    pyautogui.hotkey("ctrl", "s")
+                    self.log_message(f"Dokument in '{app}' gespeichert.")
                 
                 elif intent == "write":
-                    self.log_message("Tippen nicht möglich, Bildschirmerkennung deaktiviert.")
+                    text = step.replace("schreibe", "").replace("tippe", "").strip()
+                    pyautogui.write(text)
+                    self.log_message(f"Text '{text}' eingegeben.")
                 
                 else:
                     self.log_message(f"Schritt '{step}' nicht verstanden. Sag z. B. ‚Öffne Edge‘, ‚Suche nach xAI‘ oder ‚Spiele Musik‘.")
@@ -433,11 +490,12 @@ class FaceBot:
             self.driver.quit()
             self.root.quit()
         elif cmd in ["hilfe", "help"] or intent == "help":
-            self.log_message("Ich kann folgendes:\n- Viren prüfen: ‚Prüf auf Viren‘\n- Server: ‚Starte WinSCP‘, ‚Starte PuTTY‘\n- Dateien hochladen: ‚Lade Datei hoch‘\n- Discord: ‚Sende Nachricht an @user‘ (manuell abschicken)\n- Musik: ‚Spiele Shape of You‘\n- Programme öffnen: ‚Öffne Edge‘\n- Aufgaben: ‚Suche nach xAI‘\n- Beenden: ‚Beenden‘\nSag mir einfach, was du willst! Hinweis: Bildschirmerkennung ist deaktiviert.")
+            self.log_message("Ich kann folgendes:\n- Viren prüfen: ‚Prüf dokument.txt auf Viren‘ oder ‚Prüf auf Viren‘\n- Server: ‚Starte WinSCP‘, ‚Starte PuTTY‘\n- Dateien hochladen: ‚Lade dokument.txt hoch‘\n- Discord: ‚Sende Nachricht an @user‘\n- Musik: ‚Spiele Shape of You‘\n- Programme öffnen: ‚Öffne Edge‘\n- Aufgaben: ‚Suche nach xAI‘, ‚Schreibe in Word Hallo‘\n- Beenden: ‚Beenden‘")
         elif intent == "virus":
-            self._check_for_viruses()
+            file_name = params.get("file")
+            self._check_for_viruses(file_name)
         elif intent == "click":
-            self.log_message("Klicken nicht möglich, Bildschirmerkennung deaktiviert.")
+            self._perform_click()
         elif intent == "winscp":
             if not self.server_config and not self._prompt_server_config():
                 self.log_message("Keine Server-Daten. Abbruch.")
@@ -449,14 +507,14 @@ class FaceBot:
                 return
             self._start_putty()
         elif intent == "upload":
-            file_path = params.get("target", cmd.replace("upload", "").strip())
-            if not file_path:
-                self.log_message("Welche Datei soll ich hochladen?")
+            file_name = params.get("file", cmd.replace("upload", "").replace("hochladen", "").replace("lade", "").strip())
+            if not file_name:
+                self.log_message("Welche Datei soll ich hochladen? Sag z. B. ‚Lade dokument.txt hoch‘.")
                 return
             if not self.server_config and not self._prompt_server_config():
                 self.log_message("Keine Server-Daten. Abbruch.")
                 return
-            self._upload_file(file_path)
+            self._upload_file(file_name)
         elif intent == "discord":
             parts = cmd.replace("discord", "").strip().split(maxsplit=1)
             if len(parts) < 2:
@@ -489,20 +547,73 @@ class FaceBot:
             elif self.context.user_preferences["browser"] > 0:
                 self.log_message("Willst du im Browser was machen? Sag z. B. ‚Suche nach xAI‘.")
 
-    def _check_for_viruses(self) -> None:
+    def _check_for_viruses(self, file_name: Optional[str] = None) -> None:
         self.log_message("Prüfe auf Viren...")
         self.context.last_action = "virus"
-        suspicious_processes = ['malware.exe', 'virus.exe']
-        found = False
-        for proc in psutil.process_iter(['name']):
-            if proc.info['name'].lower() in suspicious_processes:
-                self.log_message(f"Achtung: Verdächtiger Prozess: {proc.info['name']}")
-                found = True
-        if not found:
-            self.log_message("Alles sauber, keine Viren gefunden.")
+        
+        if file_name:
+            if os.path.isabs(file_name) and os.path.exists(file_name):
+                file_path = file_name
+            else:
+                file_path = None
+                for root, _, files in os.walk(self.config.base_search_dir):
+                    if file_name in files:
+                        file_path = os.path.join(root, file_name)
+                        break
+            
+            if not file_path or not os.path.exists(file_path):
+                self.log_message(f"Datei '{file_name}' nicht gefunden! Gib einen gültigen Pfad oder Dateinamen an.")
+                return
+            
+            suspicious_extensions = ['.exe', '.bat', '.vbs', '.scr']
+            suspicious_names = ['malware', 'virus', 'trojan']
+            file_ext = os.path.splitext(file_path)[1].lower()
+            file_base = os.path.basename(file_path).lower()
+            
+            if file_ext in suspicious_extensions or any(susp in file_base for susp in suspicious_names):
+                self.log_message(f"Achtung: Verdächtige Datei: {file_path}")
+            else:
+                self.log_message(f"Datei '{file_path}' scheint sauber zu sein.")
+            return
+        
+        def prompt_file():
+            file_window = tk.Toplevel(self.root)
+            file_window.title("Datei zum Scannen auswählen")
+            file_window.geometry("400x150")
+            
+            tk.Label(file_window, text="Gib den Pfad zur Datei ein (z. B. dokument.txt):").pack(pady=5)
+            file_entry = tk.Entry(file_window)
+            file_entry.pack(pady=5)
+            
+            def submit():
+                entered_file = file_entry.get().strip()
+                file_window.destroy()
+                if entered_file:
+                    self._check_for_viruses(entered_file)
+                else:
+                    self.log_message("Kein Dateiname angegeben. Prüfe Prozesse stattdessen...")
+                    suspicious_processes = ['malware.exe', 'virus.exe']
+                    found = False
+                    for proc in psutil.process_iter(['name']):
+                        if proc.info['name'].lower() in suspicious_processes:
+                            self.log_message(f"Achtung: Verdächtiger Prozess: {proc.info['name']}")
+                            found = True
+                    if not found:
+                        self.log_message("Alles sauber, keine verdächtigen Prozesse gefunden.")
+            
+            tk.Button(file_window, text="Scannen", command=submit).pack(pady=10)
+            file_window.transient(self.root)
+            file_window.grab_set()
+            self.root.wait_window(file_window)
+        
+        prompt_file()
     
     def _perform_click(self) -> None:
-        self.log_message("Klicken nicht möglich, Bildschirmerkennung deaktiviert.")
+        try:
+            pyautogui.click()
+            self.log_message("Klick ausgeführt.")
+        except Exception as e:
+            self.log_message(f"Fehler beim Klicken: {e}")
     
     def _start_winscp(self) -> None:
         if not os.path.exists(self.config.winscp_path):
@@ -519,7 +630,12 @@ class FaceBot:
             subprocess.Popen(cmd, shell=True)
             time.sleep(3)
             if self.server_config["password"] and not self.server_config["key_path"]:
-                self.log_message("Passwort-Eingabe nicht möglich, Bildschirmerkennung deaktiviert. Gib das Passwort manuell ein.")
+                self._focus_application("winscp")
+                time.sleep(2)
+                pyautogui.click(960, 540)
+                pyautogui.write(self.server_config["password"])
+                pyautogui.press("enter")
+                self.log_message("Passwort eingegeben.")
             self.log_message("WinSCP gestartet! Du kannst jetzt Dateien übertragen.")
         except Exception as e:
             self.log_message(f"Fehler beim Starten von WinSCP: {e}")
@@ -541,9 +657,18 @@ class FaceBot:
         except Exception as e:
             self.log_message(f"Fehler beim Starten von PuTTY: {e}")
     
-    def _upload_file(self, file_path: str) -> None:
+    def _upload_file(self, file_name: str) -> None:
+        if os.path.isabs(file_name) and os.path.exists(file_name):
+            file_path = file_name
+        else:
+            file_path = None
+            for root, _, files in os.walk(self.config.base_search_dir):
+                if file_name in files:
+                    file_path = os.path.join(root, file_name)
+                    break
+        
         if not file_path or not os.path.exists(file_path):
-            self.log_message("Datei nicht gefunden! Gib einen gültigen Pfad an.")
+            self.log_message(f"Datei '{file_name}' nicht gefunden! Gib einen gültigen Pfad oder Dateinamen an.")
             return
         
         if not os.path.exists(self.config.winscp_path):
@@ -587,14 +712,17 @@ class FaceBot:
             self.driver.get(search_url)
             time.sleep(3)
             
+            if self._handle_cloudflare_captcha():
+                self.log_message("CAPTCHA gelöst!")
+            
             try:
                 first_result = WebDriverWait(self.driver, 10).until(
                     EC.element_to_be_clickable((By.XPATH, self.config.tracklist_xpath))
                 )
                 first_result.click()
-                self.log_message(f"'{song_name}' wird abgespielt! Falls ein CAPTCHA erscheint, löse es manuell.")
+                self.log_message(f"'{song_name}' wird abgespielt!")
             except Exception as e:
-                self.log_message(f"Fehler beim Abspielen auf Spotify: {e}. Bist du eingeloggt? Ist das Lied verfügbar? Falls ein CAPTCHA erscheint, löse es manuell.")
+                self.log_message(f"Fehler beim Abspielen auf Spotify: {e}. Bist du eingeloggt? Ist das Lied verfügbar?")
         
         except Exception as e:
             self.log_message(f"Fehler beim Öffnen von Spotify: {e}")
@@ -604,7 +732,24 @@ class FaceBot:
         self.context.last_action = "open"
         self.context.last_application = target
         
+        program_map = {
+            "microsoft edge": "msedge.exe",
+            "edge": "msedge.exe",
+            "chrome": "chrome.exe",
+            "firefox": "firefox.exe",
+            "word": "winword.exe",
+            "excel": "excel.exe",
+            "notepad": "notepad.exe",
+            "winscp": "WinSCP.exe"
+        }
+        
         try:
+            executable = program_map.get(target.lower())
+            if executable:
+                subprocess.Popen(executable, shell=True)
+                self.log_message(f"Programm '{target}' gestartet!")
+                return
+            
             if os.path.isabs(target) and os.path.exists(target):
                 os.startfile(target)
                 self.log_message(f"'{target}' geöffnet!")
@@ -623,14 +768,31 @@ class FaceBot:
                     self.log_message(f"Datei '{file_path}' geöffnet!")
                     return
             
-            self.log_message(f"'{target}' nicht gefunden. Gib einen gültigen Pfad oder Programmnamen an.")
+            target_doc = self.nlp(target.lower())
+            suggestions = []
+            for name in program_map.keys():
+                name_doc = self.nlp(name)
+                similarity = target_doc.similarity(name_doc)
+                if similarity > 0.8:
+                    suggestions.append(name)
+            suggestion_text = f" Meintest du vielleicht: {', '.join(suggestions)}?" if suggestions else ""
+            self.log_message(f"'{target}' nicht gefunden. Gib einen gültigen Pfad oder Programmnamen an.{suggestion_text}")
         
         except Exception as e:
             self.log_message(f"Fehler beim Öffnen von '{target}': {e}")
     
     def _handle_cloudflare_captcha(self) -> bool:
-        self.log_message("CAPTCHA-Handling nicht möglich, Bildschirmerkennung deaktiviert. Löse CAPTCHAs manuell im Browser.")
-        return False
+        try:
+            time.sleep(2)
+            pyautogui.click(960, 540)
+            time.sleep(2)
+            if "captcha" in self.driver.page_source.lower():
+                self.log_message("CAPTCHA nicht gelöst. Bitte löse das CAPTCHA manuell.")
+                return False
+            return True
+        except Exception as e:
+            self.log_message(f"Fehler beim CAPTCHA-Handling: {e}. Bitte löse das CAPTCHA manuell.")
+            return False
     
     def _send_discord_message(self, target: str, message: str) -> None:
         self.log_message(f"Sende Nachricht an '{target}' auf Discord...")
@@ -639,6 +801,9 @@ class FaceBot:
         try:
             self.driver.get(self.config.discord_login_url)
             time.sleep(3)
+            
+            if self._handle_cloudflare_captcha():
+                self.log_message("CAPTCHA gelöst!")
             
             if self.config.discord_email and self.config.discord_password:
                 try:
@@ -650,12 +815,17 @@ class FaceBot:
                     email_field.send_keys(self.config.discord_email)
                     password_field.send_keys(self.config.discord_password)
                     self.driver.find_element(By.XPATH, self.config.discord_submit_xpath).click()
-                    self.log_message("Logge in Discord ein... Falls ein CAPTCHA erscheint, löse es manuell.")
+                    self.log_message("Logge in Discord ein...")
                     time.sleep(5)
                 except Exception as e:
                     self.log_message(f"Fehler beim Discord-Login: {e}. Bitte manuell einloggen.")
+                    return
             
-            self.log_message(f"Automatisches Senden von Nachrichten nicht möglich, Bildschirmerkennung deaktiviert. Gib die Nachricht '{message}' an '{target}' manuell im Discord-Fenster ein.")
+            time.sleep(5)
+            self._focus_application("discord")
+            pyautogui.write(f"@{target} {message}")
+            pyautogui.press("enter")
+            self.log_message(f"Nachricht an '{target}' gesendet!")
         except Exception as e:
             self.log_message(f"Fehler beim Senden der Nachricht: {e}")
     
