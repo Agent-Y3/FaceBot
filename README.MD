@@ -10,7 +10,7 @@ Um FaceBot zu installieren und zu starten, führe einfach die folgenden zwei Sch
    - Öffne eine Eingabeaufforderung und führe das Skript aus:
      ```bash
      cd Downloads
-     python install_facebot.py
+     python3 install_facebot.py
      ```
    - Das Skript richtet die virtuelle Umgebung (`C:\facebot_env`), installiert alle benötigten Python-Module und gibt Anweisungen für die Installation von WinSCP und PuTTY aus.
 
@@ -20,7 +20,7 @@ Um FaceBot zu installieren und zu starten, führe einfach die folgenden zwei Sch
      ```bash
      C:\facebot_env\Scripts\activate
      cd Downloads
-     python facebot.py
+     python3 facebot.py
      ```
    - Ein GUI-Fenster öffnet sich. Gib Befehle wie „Öffne Edge“, „Spiele Shape of You“ oder „Suche nach xAI“ ein oder sprich sie.
 
