@@ -42,7 +42,7 @@ pygame.mixer.init()
 
 @dataclass
 class Config:
-    """Konfiguration für FaceBot."""
+    """Configuration for FaceBot."""
     winscp_path: str = r"C:\Program Files (x86)\WinSCP\WinSCP.exe"
     putty_path: str = r"C:\Program Files\PuTTY\putty.exe"
     base_search_dir: str = os.path.expandvars(r"%userprofile%")
@@ -61,7 +61,7 @@ class Config:
 
 @dataclass
 class Context:
-    """Kontext für Benutzeraktionen und Präferenzen."""
+    """Context for user actions and preferences."""
     last_application: Optional[str] = None
     last_action: Optional[str] = None
     user_preferences: Dict[str, int] = None
@@ -71,7 +71,7 @@ class Context:
 
 class FaceBot:
     def __init__(self, root: tk.Tk):
-        """Initialisiert den FaceBot."""
+        """Initializes the FaceBot."""
         self.root = root
         self.root.title("FaceBot")
         self.driver = None
@@ -96,13 +96,13 @@ class FaceBot:
         self.input_field.pack(side=tk.LEFT, expand=True, fill=tk.X)
         self.input_field.bind("<Return>", self.process_command)
         
-        self.send_button = tk.Button(self.input_frame, text="Senden", command=self.process_command)
+        self.send_button = tk.Button(self.input_frame, text="Send", command=self.process_command)
         self.send_button.pack(side=tk.RIGHT, padx=5)
         
-        self.listen_button = tk.Button(self.input_frame, text="Mikrofon", command=self.toggle_listening)
+        self.listen_button = tk.Button(self.input_frame, text="Microphone", command=self.toggle_listening)
         self.listen_button.pack(side=tk.RIGHT)
         
-        self.config_button = tk.Button(self.input_frame, text="Einstellungen", command=self._open_config_ui)
+        self.config_button = tk.Button(self.input_frame, text="Settings", command=self._open_config_ui)
         self.config_button.pack(side=tk.RIGHT, padx=5)
         
         self.indicator_canvas = tk.Canvas(root, width=100, height=30, bg='black')
@@ -117,10 +117,10 @@ class FaceBot:
         self._load_config()
         self._initialize_browser()
         
-        self.log_message(f"Okay, ich bin bereit! Verwende Browser: {self.browser_name.capitalize()}. Sag z. B. 'Öffne Edge' oder 'Suche nach xAI'.")
+        self.log_message(f"Okay, I'm ready! Using browser: {self.browser_name.capitalize()}. Say e.g., 'Open Edge' or 'Search for xAI'.")
 
     def _setup_logger(self) -> logging.Logger:
-        """Konfiguriert den Logger."""
+        """Sets up the logger."""
         logger = logging.getLogger("FaceBot")
         logger.setLevel(logging.INFO)
         handler = logging.StreamHandler()
@@ -129,7 +129,7 @@ class FaceBot:
         return logger
 
     def _setup_encryption(self) -> None:
-        """Richtet die Verschlüsselung ein."""
+        """Sets up encryption."""
         try:
             if os.path.exists(self.config.encryption_key_file):
                 with open(self.config.encryption_key_file, 'rb') as f:
@@ -140,17 +140,17 @@ class FaceBot:
                     f.write(key)
             self.fernet = Fernet(key)
         except Exception as e:
-            self.logger.error(f"Fehler bei der Verschlüsselungseinrichtung: {e}")
+            self.logger.error(f"Error setting up encryption: {e}")
             self.fernet = None
 
     def _encrypt_data(self, data: str) -> str:
-        """Verschlüsselt Daten."""
+        """Encrypts data."""
         if not self.fernet or not data:
             return data
         return base64.b64encode(self.fernet.encrypt(data.encode())).decode()
 
     def _decrypt_data(self, data: str) -> str:
-        """Entschlüsselt Daten."""
+        """Decrypts data."""
         if not self.fernet or not data:
             return data
         try:
@@ -159,7 +159,7 @@ class FaceBot:
             return data
 
     def _load_config(self) -> None:
-        """Lädt Konfigurationsdaten."""
+        """Loads configuration data."""
         try:
             if os.path.exists(self.config.config_file):
                 with open(self.config.config_file, 'r') as f:
@@ -171,10 +171,10 @@ class FaceBot:
                 self.speech_enabled = config_data.get('speech_enabled', self.config.enable_speech)
                 self.config.enable_listening = config_data.get('enable_listening', self.config.enable_listening)
         except Exception as e:
-            self.logger.error(f"Fehler beim Laden der Konfiguration: {e}")
+            self.logger.error(f"Error loading configuration: {e}")
 
     def _save_config(self) -> None:
-        """Speichert Konfigurationsdaten."""
+        """Saves configuration data."""
         try:
             config_data = {
                 'server_config': self.server_config or {},
@@ -187,10 +187,10 @@ class FaceBot:
             with open(self.config.config_file, 'w') as f:
                 json.dump(config_data, f, indent=4)
         except Exception as e:
-            self.logger.error(f"Fehler beim Speichern der Konfiguration: {e}")
+            self.logger.error(f"Error saving configuration: {e}")
 
     def _speak(self, text: str) -> None:
-        """Spricht den Text, wenn aktiviert."""
+        """Speaks the text if enabled."""
         if not self.speech_enabled:
             return
         try:
@@ -205,10 +205,10 @@ class FaceBot:
                     time.sleep(0.1)
             threading.Thread(target=play_audio, daemon=True).start()
         except Exception as e:
-            self.logger.error(f"Fehler bei Sprachausgabe: {e}")
+            self.logger.error(f"Error in speech output: {e}")
 
     def _update_audio_indicator(self, stream: pyaudio.Stream) -> None:
-        """Aktualisiert den Audio-Indikator."""
+        """Updates the audio indicator."""
         CHUNK = 1024
         while self.listening:
             try:
@@ -222,7 +222,7 @@ class FaceBot:
                 pass
 
     def _listen_for_commands(self) -> None:
-        """Hört auf Sprachbefehle."""
+        """Listens for voice commands."""
         stream = None
         error_count = 0
         try:
@@ -233,7 +233,7 @@ class FaceBot:
                 stream = pyaudio.PyAudio().open(format=pyaudio.paInt16, channels=1, rate=44100, input=True, frames_per_buffer=1024)
                 threading.Thread(target=self._update_audio_indicator, args=(stream,), daemon=True).start()
                 
-                self.log_message("Spracherkennung aktiv. Sprich klar, z. B. 'Öffne Edge'. Deaktiviere in Einstellungen, falls Probleme auftreten.")
+                self.log_message("Speech recognition active. Speak clearly, e.g., 'Open Edge'. Disable in settings if issues occur.")
                 while self.listening:
                     try:
                         audio = self.recognizer.listen(source, timeout=5, phrase_time_limit=15)
@@ -242,7 +242,7 @@ class FaceBot:
                             error_count = 0
                             continue
                         command = self.recognizer.recognize_google(audio, language="de-DE")
-                        self.log_message(f"Du hast gesagt: {command}")
+                        self.log_message(f"You said: {command}")
                         self.root.after(0, self.process_command, None, command)
                         error_count = 0
                     except sr.WaitTimeoutError:
@@ -250,18 +250,18 @@ class FaceBot:
                     except sr.UnknownValueError:
                         error_count += 1
                         if error_count >= 3:
-                            self.log_message("Mehrere unverständliche Eingaben. Sprich lauter oder überprüfe das Mikrofon. Deaktiviere die Spracherkennung in den Einstellungen, falls nötig.")
+                            self.log_message("Multiple unclear inputs. Speak louder or check the microphone. Disable speech recognition in settings if needed.")
                             error_count = 0
                     except sr.RequestError as e:
-                        self.log_message(f"Fehler bei der Spracherkennung: {e}. Überprüfe deine Internetverbindung.")
+                        self.log_message(f"Speech recognition error: {e}. Check your internet connection.")
                         error_count = 0
                     except Exception as e:
-                        self.log_message(f"Unbekannter Fehler bei der Spracherkennung: {e}. Versuche es erneut.")
+                        self.log_message(f"Unknown speech recognition error: {e}. Try again.")
                         error_count = 0
         except Exception as e:
-            self.log_message(f"Fehler beim Starten der Spracherkennung: {e}. Spracherkennung deaktiviert. Verwende die Texteingabe.")
+            self.log_message(f"Error starting speech recognition: {e}. Speech recognition disabled. Use text input.")
             self.listening = False
-            self.listen_button.config(text="Mikrofon")
+            self.listen_button.config(text="Microphone")
         finally:
             if stream:
                 stream.stop_stream()
@@ -269,77 +269,77 @@ class FaceBot:
                 pyaudio.PyAudio().terminate()
 
     def toggle_listening(self) -> None:
-        """Schaltet das Mikrofon ein/aus."""
+        """Toggles the microphone on/off."""
         try:
             if not self.config.enable_listening:
-                self.log_message("Spracherkennung ist in den Einstellungen deaktiviert. Aktiviere sie, um das Mikrofon zu nutzen.")
+                self.log_message("Speech recognition is disabled in settings. Enable it to use the microphone.")
                 return
             if not self.listening:
                 try:
                     sr.Microphone()
                     self.listening = True
-                    self.listen_button.config(text="Stop Mikrofon")
+                    self.listen_button.config(text="Stop Microphone")
                     self.audio_thread = threading.Thread(target=self._listen_for_commands, daemon=True)
                     self.audio_thread.start()
-                    self.log_message("Mikrofon ist an. Sag mir, was ich tun soll!")
+                    self.log_message("Microphone is on. Tell me what to do!")
                 except Exception as e:
-                    self.log_message(f"Fehler: Mikrofon nicht verfügbar ({e}). Verwende die Texteingabe.")
+                    self.log_message(f"Error: Microphone not available ({e}). Use text input.")
             else:
                 self.listening = False
-                self.listen_button.config(text="Mikrofon")
+                self.listen_button.config(text="Microphone")
                 if self.audio_thread:
                     self.audio_thread.join(timeout=1)
                     self.audio_thread = None
                 for bar in self.bars:
                     self.indicator_canvas.coords(bar, 10 + self.bars.index(bar) * 20, 25, 25 + self.bars.index(bar) * 20, 25)
-                self.log_message("Mikrofon ausgeschaltet.")
+                self.log_message("Microphone turned off.")
         except Exception as e:
-            self.log_message(f"Fehler beim Umschalten des Mikrofons: {e}. Verwende die Texteingabe.")
+            self.log_message(f"Error toggling microphone: {e}. Use text input.")
 
     def _open_config_ui(self) -> None:
-        """Öffnet die Konfigurations-UI."""
+        """Opens the configuration UI."""
         try:
             config_window = tk.Toplevel(self.root)
-            config_window.title("FaceBot Einstellungen")
+            config_window.title("FaceBot Settings")
             config_window.geometry("400x550")
             
-            tk.Label(config_window, text="Server-Konfiguration", font=("Arial", 12, "bold")).pack(pady=10)
+            tk.Label(config_window, text="Server Configuration", font=("Arial", 12, "bold")).pack(pady=10)
             tk.Label(config_window, text="Host (IP/Hostname):").pack()
             host_entry = tk.Entry(config_window)
             host_entry.pack()
             host_entry.insert(0, self.server_config.get('host', '') if self.server_config else '')
             
-            tk.Label(config_window, text="Benutzername:").pack()
+            tk.Label(config_window, text="Username:").pack()
             username_entry = tk.Entry(config_window)
             username_entry.pack()
             username_entry.insert(0, self.server_config.get('username', '') if self.server_config else '')
             
-            tk.Label(config_window, text="Passwort (optional, wenn Schlüssel):").pack()
+            tk.Label(config_window, text="Password (optional if key is used):").pack()
             password_entry = tk.Entry(config_window, show="*")
             password_entry.pack()
             password_entry.insert(0, self.server_config.get('password', '') if self.server_config else '')
             
-            tk.Label(config_window, text="Schlüsselpfad (.ppk, optional):").pack()
+            tk.Label(config_window, text="Key Path (.ppk, optional):").pack()
             key_path_entry = tk.Entry(config_window)
             key_path_entry.pack()
             key_path_entry.insert(0, self.server_config.get('key_path', '') if self.server_config else '')
             
-            tk.Label(config_window, text="Discord-Konfiguration", font=("Arial", 12, "bold")).pack(pady=10)
-            tk.Label(config_window, text="E-Mail:").pack()
+            tk.Label(config_window, text="Discord Configuration", font=("Arial", 12, "bold")).pack(pady=10)
+            tk.Label(config_window, text="Email:").pack()
             discord_email_entry = tk.Entry(config_window)
             discord_email_entry.pack()
             discord_email_entry.insert(0, self.config.discord_email)
             
-            tk.Label(config_window, text="Passwort:").pack()
+            tk.Label(config_window, text="Password:").pack()
             discord_password_entry = tk.Entry(config_window, show="*")
             discord_password_entry.pack()
             discord_password_entry.insert(0, self.config.discord_password)
             
-            tk.Label(config_window, text="Allgemeine Einstellungen", font=("Arial", 12, "bold")).pack(pady=10)
+            tk.Label(config_window, text="General Settings", font=("Arial", 12, "bold")).pack(pady=10)
             speech_var = tk.BooleanVar(value=self.speech_enabled)
-            tk.Checkbutton(config_window, text="Sprachausgabe aktivieren", variable=speech_var).pack()
+            tk.Checkbutton(config_window, text="Enable Speech Output", variable=speech_var).pack()
             listening_var = tk.BooleanVar(value=self.config.enable_listening)
-            tk.Checkbutton(config_window, text="Spracherkennung aktivieren", variable=listening_var).pack()
+            tk.Checkbutton(config_window, text="Enable Speech Recognition", variable=listening_var).pack()
             
             def save():
                 host = host_entry.get().strip()
@@ -358,19 +358,19 @@ class FaceBot:
                 self.speech_enabled = speech_var.get()
                 self.config.enable_listening = listening_var.get()
                 self._save_config()
-                self.log_message("Einstellungen gespeichert.")
+                self.log_message("Settings saved.")
                 if not self.config.enable_listening and self.listening:
                     self.toggle_listening()
                 config_window.destroy()
             
-            tk.Button(config_window, text="Speichern", command=save).pack(pady=20)
+            tk.Button(config_window, text="Save", command=save).pack(pady=20)
             config_window.transient(self.root)
             config_window.grab_set()
         except Exception as e:
-            self.log_message(f"Fehler beim Öffnen der Einstellungen: {e}")
+            self.log_message(f"Error opening settings: {e}")
 
     def _get_default_browser(self) -> str:
-        """Ermittelt den Standardbrowser."""
+        """Determines the default browser."""
         try:
             with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\Shell\Associations\UrlAssociations\http\UserChoice") as key:
                 prog_id = winreg.QueryValueEx(key, "ProgId")[0]
@@ -385,10 +385,10 @@ class FaceBot:
             return "chrome"
 
     def _initialize_browser(self) -> None:
-        """Initialisiert den Webbrowser."""
+        """Initializes the web browser."""
         try:
             self.browser_name = self._get_default_browser()
-            self.log_message(f"Standardbrowser: {self.browser_name.capitalize()}.")
+            self.log_message(f"Default browser: {self.browser_name.capitalize()}.")
             
             if self.browser_name == "firefox":
                 service = FirefoxService(GeckoDriverManager().install())
@@ -402,7 +402,7 @@ class FaceBot:
             self.driver.maximize_window()
             self.context.last_application = self.browser_name
         except Exception as e:
-            self.log_message(f"Fehler beim Starten von {self.browser_name}: {e}. Versuche Chrome...")
+            self.log_message(f"Error starting {self.browser_name}: {e}. Trying Chrome...")
             try:
                 service = ChromeService(ChromeDriverManager().install())
                 self.driver = webdriver.Chrome(service=service)
@@ -410,11 +410,11 @@ class FaceBot:
                 self.browser_name = "chrome"
                 self.context.last_application = "chrome"
             except Exception as e2:
-                self.log_message(f"Fehler beim Starten von Chrome: {e2}. Browser-Funktionen sind deaktiviert.")
+                self.log_message(f"Error starting Chrome: {e2}. Browser functions are disabled.")
                 self.driver = None
 
     def log_message(self, message: str) -> None:
-        """Loggt eine Nachricht."""
+        """Logs a message."""
         try:
             def update_gui():
                 self.chat_area.configure(state='normal')
@@ -426,10 +426,10 @@ class FaceBot:
             self.logger.info(message)
             self._speak(message)
         except Exception as e:
-            self.logger.error(f"Fehler beim Loggen: {e}")
+            self.logger.error(f"Error logging: {e}")
 
     def _focus_application(self, app_name: str) -> bool:
-        """Fokussiert eine Anwendung."""
+        """Focuses an application."""
         try:
             app_map = {
                 "edge": "Microsoft Edge",
@@ -454,18 +454,18 @@ class FaceBot:
                 hwnd = handles[0]
                 win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
                 win32gui.SetForegroundWindow(hwnd)
-                self.log_message(f"Anwendung '{app_name}' fokussiert.")
+                self.log_message(f"Application '{app_name}' focused.")
                 return True
             
-            self.log_message(f"Anwendung '{app_name}' nicht gefunden. Starte sie...")
+            self.log_message(f"Application '{app_name}' not found. Starting it...")
             self._open_file_or_program(app_name)
             return True
         except Exception as e:
-            self.log_message(f"Fehler beim Fokussieren von '{app_name}': {e}. Stelle sicher, dass die Anwendung installiert ist.")
+            self.log_message(f"Error focusing '{app_name}': {e}. Ensure the application is installed.")
             return False
 
     def _parse_intent(self, command: str) -> Tuple[Optional[str], Dict[str, str]]:
-        """Parst den Intent eines Befehls mit Regex-Fallback."""
+        """Parses the intent of a command with regex fallback."""
         try:
             intent = None
             params = {}
@@ -540,13 +540,13 @@ class FaceBot:
             
             return intent, params
         except Exception as e:
-            self.log_message(f"Fehler beim Parsen des Befehls: {e}. Versuche es mit einem klareren Befehl.")
+            self.log_message(f"Error parsing command: {e}. Try a clearer command.")
             return None, {}
 
     def _execute_task(self, task: str) -> None:
-        """Führt eine Aufgabe aus."""
+        """Executes a task."""
         try:
-            self.log_message(f"Mache: '{task}'...")
+            self.log_message(f"Working on: '{task}'...")
             self.context.last_action = "task"
             task_lower = task.lower().strip()
             steps = re.split(r"\s+und\s+|,\s*", task_lower)
@@ -558,7 +558,7 @@ class FaceBot:
                 intent, params = self._parse_intent(step)
                 
                 if not intent:
-                    self.log_message(f"Schritt '{step}' nicht verstanden. Sag z. B. 'Öffne Edge' oder 'Suche nach xAI'.")
+                    self.log_message(f"Step '{step}' not understood. Say e.g., 'Open Edge' or 'Search for xAI'.")
                     continue
                 
                 if intent == "open" and "tab" in step:
@@ -567,50 +567,50 @@ class FaceBot:
                         browser = self.browser_name
                     self._focus_application(browser)
                     self.root.after(100, lambda: subprocess.run(["start", ""], shell=True))
-                    self.log_message(f"Neuer Tab in {browser.capitalize()} geöffnet!")
+                    self.log_message(f"New tab opened in {browser.capitalize()}!")
                 
                 elif intent == "search":
                     search_term = params.get("search_term", step.replace("suche", "").replace("nach", "").strip())
                     browser = params.get("browser", self.browser_name)
                     if not search_term:
-                        self.log_message("Kein Suchbegriff angegeben. Was soll ich suchen?")
+                        self.log_message("No search term provided. What should I search for?")
                         continue
                     if browser not in ["edge", "microsoft edge", "chrome", "firefox"]:
                         browser = self.browser_name
                     if not self.driver:
-                        self.log_message("Kein Browser verfügbar. Starte einen Browser neu.")
+                        self.log_message("No browser available. Restarting a browser.")
                         self._initialize_browser()
                         if not self.driver:
                             continue
-                    self.log_message(f"Suche nach '{search_term}' in {browser.capitalize()}...")
+                    self.log_message(f"Searching for '{search_term}' in {browser.capitalize()}...")
                     self._open_file_or_program(browser)
                     self._focus_application(browser)
                     encoded_term = quote(search_term)
                     self.driver.get(f"https://www.google.com/search?q={encoded_term}")
                     WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-                    self.log_message(f"Suche nach '{search_term}' durchgeführt!")
+                    self.log_message(f"Search for '{search_term}' completed!")
                 
                 elif intent == "close":
                     app = params.get("target", self.context.last_application)
                     if not app:
-                        self.log_message("Keine Anwendung angegeben. Was soll ich schließen?")
+                        self.log_message("No application specified. What should I close?")
                         continue
                     self._focus_application(app)
                     self.root.after(100, lambda: subprocess.run(["taskkill", "/IM", app + ".exe", "/F"], shell=True, capture_output=True))
-                    self.log_message(f"Anwendung '{app}' geschlossen.")
+                    self.log_message(f"Application '{app}' closed.")
                 
                 elif intent == "maximize":
                     app = params.get("target", self.context.last_application)
                     if not app:
-                        self.log_message("Keine Anwendung angegeben. Was soll ich maximieren?")
+                        self.log_message("No application specified. What should I maximize?")
                         continue
                     self._focus_application(app)
-                    self.log_message(f"Anwendung '{app}' maximiert.")
+                    self.log_message(f"Application '{app}' maximized.")
                 
                 elif intent == "open":
                     program = params.get("target")
                     if not program:
-                        self.log_message("Was soll ich öffnen?")
+                        self.log_message("What should I open?")
                         continue
                     self._open_file_or_program(program)
                 
@@ -618,28 +618,28 @@ class FaceBot:
                     text = params.get("text", step.replace("schreibe", "").replace("tippe", "").strip())
                     app = params.get("app", self.context.last_application)
                     if not app:
-                        self.log_message("Keine Anwendung angegeben. Wohin soll ich schreiben?")
+                        self.log_message("No application specified. Where should I write?")
                         continue
                     self._focus_application(app)
                     self.root.after(100, lambda: subprocess.run(["powershell", "-Command", f"Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('{text}')"], shell=True))
-                    self.log_message(f"Text '{text}' in {app} geschrieben.")
+                    self.log_message(f"Text '{text}' written in {app}.")
                 
                 elif intent == "save":
                     app = params.get("target", self.context.last_application)
                     if not app:
-                        self.log_message("Keine Anwendung angegeben. Was soll ich speichern?")
+                        self.log_message("No application specified. What should I save?")
                         continue
                     self._focus_application(app)
                     self.root.after(100, lambda: subprocess.run(["powershell", "-Command", "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('^s')"], shell=True))
-                    self.log_message(f"Dokument in '{app}' gespeichert.")
+                    self.log_message(f"Document saved in '{app}'.")
                 
                 else:
-                    self.log_message(f"Schritt '{step}' nicht verstanden. Sag z. B. 'Öffne Edge' oder 'Suche nach xAI'.")
+                    self.log_message(f"Step '{step}' not understood. Say e.g., 'Open Edge' or 'Search for xAI'.")
         except Exception as e:
-            self.log_message(f"Fehler bei der Ausführung von '{task}': {e}. Versuche es mit einem anderen Befehl.")
+            self.log_message(f"Error executing '{task}': {e}. Try another command.")
 
     def _sanitize_input(self, cmd: str) -> str:
-        """Bereinigt Benutzereingaben."""
+        """Sanitizes user input."""
         cmd = re.sub(r'[<>|;&$]', '', cmd)
         cmd = cmd.strip()
         if len(cmd) > 500:
@@ -647,7 +647,7 @@ class FaceBot:
         return cmd
 
     def process_command(self, event: Optional[tk.Event] = None, command: Optional[str] = None) -> None:
-        """Verarbeitet einen Befehl."""
+        """Processes a command."""
         try:
             cmd = command if command else self.input_field.get().strip()
             if not command:
@@ -657,36 +657,36 @@ class FaceBot:
                 return
             
             cmd = self._sanitize_input(cmd)
-            self.log_message(f"Du: {cmd}")
+            self.log_message(f"You: {cmd}")
             
             cmd = re.sub(r'^facebot[,]?[\s]*(hey\s)?', '', cmd, flags=re.IGNORECASE).strip().lower()
             
             intent, params = self._parse_intent(cmd)
             
             if not intent:
-                self.log_message(f"Ich habe '{cmd}' nicht verstanden. Sag z. B. 'Öffne Edge', 'Suche nach xAI' oder 'Hilfe'.")
+                self.log_message(f"I didn't understand '{cmd}'. Say e.g., 'Open Edge', 'Search for xAI', or 'Help'.")
                 return
             
             if intent == "exit":
-                self.log_message("Okay, ich mache Schluss. Tschüss!")
+                self.log_message("Okay, I'm shutting down. Bye!")
                 self.listening = False
                 if self.driver:
                     self.driver.quit()
                 self.root.quit()
             elif intent == "help":
-                self.log_message("Ich kann folgendes:\n- Programme öffnen: 'Öffne Edge'\n- Suchen: 'Suche nach xAI'\n- Musik spielen: 'Spiele Shape of You'\n- Dateien hochladen: 'Lade dokument.txt hoch'\n- Discord-Nachrichten: 'Sende an @user Hallo'\n- Server: 'Starte WinSCP', 'Starte PuTTY'\n- Schreiben: 'Schreibe in Word Hallo'\n- Beenden: 'Beenden'\n- Hilfe: 'Hilfe'")
+                self.log_message("I can do the following:\n- Open programs: 'Open Edge'\n- Search: 'Search for xAI'\n- Play music: 'Play Shape of You'\n- Upload files: 'Upload document.txt'\n- Discord messages: 'Send to @user Hello'\n- Server: 'Start WinSCP', 'Start PuTTY'\n- Write: 'Write in Word Hello'\n- Exit: 'Exit'\n- Help: 'Help'")
             elif intent == "click":
                 self._perform_click()
             elif intent == "winscp":
                 if not self.server_config:
-                    self.log_message("Keine Server-Daten. Öffne die Einstellungen, um sie einzugeben.")
+                    self.log_message("No server data. Open settings to enter them.")
                     self._open_config_ui()
                     if not self.server_config:
                         return
                 self._start_winscp()
             elif intent == "putty":
                 if not self.server_config:
-                    self.log_message("Keine Server-Daten. Öffne die Einstellungen, um sie einzugeben.")
+                    self.log_message("No server data. Open settings to enter them.")
                     self._open_config_ui()
                     if not self.server_config:
                         return
@@ -694,10 +694,10 @@ class FaceBot:
             elif intent == "upload":
                 file_name = params.get("target")
                 if not file_name:
-                    self.log_message("Welche Datei soll ich hochladen? Sag z. B. 'Lade dokument.txt hoch'.")
+                    self.log_message("Which file should I upload? Say e.g., 'Upload document.txt'.")
                     return
                 if not self.server_config:
-                    self.log_message("Keine Server-Daten. Öffne die Einstellungen, um sie einzugeben.")
+                    self.log_message("No server data. Open settings to enter them.")
                     self._open_config_ui()
                     if not self.server_config:
                         return
@@ -706,10 +706,10 @@ class FaceBot:
                 target = params.get("target")
                 message = params.get("message")
                 if not target or not message:
-                    self.log_message("Sag mir, an wen und was ich senden soll, z. B. 'Sende an @user Hallo'.")
+                    self.log_message("Tell me who to send to and what, e.g., 'Send to @user Hello'.")
                     return
                 if not self.config.discord_email or not self.config.discord_password:
-                    self.log_message("Keine Discord-Daten. Öffne die Einstellungen, um sie einzugeben.")
+                    self.log_message("No Discord credentials. Open settings to enter them.")
                     self._open_config_ui()
                     if not self.config.discord_email or not self.config.discord_password:
                         return
@@ -717,42 +717,42 @@ class FaceBot:
             elif intent == "play":
                 song_name = params.get("target")
                 if not song_name:
-                    self.log_message("Welches Lied soll ich spielen? Sag z. B. 'Spiele Shape of You'.")
+                    self.log_message("Which song should I play? Say e.g., 'Play Shape of You'.")
                     return
                 self._play_spotify_song(song_name)
             elif intent == "open":
                 target = params.get("target")
                 if not target:
-                    self.log_message("Was soll ich öffnen? Sag z. B. 'Öffne Edge'.")
+                    self.log_message("What should I open? Say e.g., 'Open Edge'.")
                     return
                 self._open_file_or_program(target)
             elif intent == "task":
                 task = params.get("target", cmd)
                 if not task:
-                    self.log_message("Was soll ich machen? Sag z. B. 'Suche nach xAI'.")
+                    self.log_message("What should I do? Say e.g., 'Search for xAI'.")
                     return
                 self._execute_task(task)
             else:
-                self.log_message(f"Befehl '{cmd}' nicht verstanden. Sag z. B. 'Öffne Edge' oder 'Hilfe'.")
+                self.log_message(f"Command '{cmd}' not understood. Say e.g., 'Open Edge' or 'Help'.")
         except Exception as e:
-            self.log_message(f"Fehler beim Verarbeiten von '{cmd}': {e}. Versuche es mit einem anderen Befehl.")
+            self.log_message(f"Error processing '{cmd}': {e}. Try another command.")
 
     def _perform_click(self) -> None:
-        """Führt einen Mausklick aus."""
+        """Performs a mouse click."""
         try:
             subprocess.run(["powershell", "-Command", "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('{LEFT}')"], shell=True)
-            self.log_message("Klick ausgeführt.")
+            self.log_message("Click performed.")
         except Exception as e:
-            self.log_message(f"Fehler beim Klicken: {e}. Stelle sicher, dass die GUI zugänglich ist.")
+            self.log_message(f"Error performing click: {e}. Ensure the GUI is accessible.")
 
     def _start_winscp(self) -> None:
-        """Startet WinSCP."""
+        """Starts WinSCP."""
         try:
             if not os.path.exists(self.config.winscp_path):
-                self.log_message(f"WinSCP nicht gefunden unter '{self.config.winscp_path}'. Installiere WinSCP oder aktualisiere den Pfad in den Einstellungen.")
+                self.log_message(f"WinSCP not found at '{self.config.winscp_path}'. Install WinSCP or update the path in settings.")
                 return
             
-            self.log_message("Starte WinSCP und verbinde mit dem Server...")
+            self.log_message("Starting WinSCP and connecting to the server...")
             self.context.last_action = "winscp"
             cmd = [self.config.winscp_path, f"sftp://{self.server_config['username']}@{self.server_config['host']}"]
             if self.server_config["key_path"]:
@@ -760,16 +760,16 @@ class FaceBot:
             process = subprocess.Popen(cmd, shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             self.root.after(10000, lambda: self._check_process_output(process, "WinSCP"))
         except Exception as e:
-            self.log_message(f"Fehler beim Starten von WinSCP: {e}. Überprüfe die Server-Daten und WinSCP-Installation.")
+            self.log_message(f"Error starting WinSCP: {e}. Check server data and WinSCP installation.")
 
     def _start_putty(self) -> None:
-        """Startet PuTTY."""
+        """Starts PuTTY."""
         try:
             if not os.path.exists(self.config.putty_path):
-                self.log_message(f"PuTTY nicht gefunden unter '{self.config.putty_path}'. Installiere PuTTY oder aktualisiere den Pfad in den Einstellungen.")
+                self.log_message(f"PuTTY not found at '{self.config.putty_path}'. Install PuTTY or update the path in settings.")
                 return
             
-            self.log_message("Starte PuTTY und verbinde mit dem Server...")
+            self.log_message("Starting PuTTY and connecting to the server...")
             self.context.last_action = "putty"
             cmd = [self.config.putty_path, "-ssh", f"{self.server_config['username']}@{self.server_config['host']}"]
             if self.server_config["key_path"]:
@@ -777,21 +777,21 @@ class FaceBot:
             process = subprocess.Popen(cmd, shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             self.root.after(10000, lambda: self._check_process_output(process, "PuTTY"))
         except Exception as e:
-            self.log_message(f"Fehler beim Starten von PuTTY: {e}. Überprüfe die Server-Daten und PuTTY-Installation.")
+            self.log_message(f"Error starting PuTTY: {e}. Check server data and PuTTY installation.")
 
     def _check_process_output(self, process: subprocess.Popen, name: str) -> None:
-        """Überprüft die Ausgabe eines Prozesses."""
+        """Checks the output of a process."""
         try:
             stdout, stderr = process.communicate(timeout=5)
             if stderr:
-                self.log_message(f"Fehler bei {name}: {stderr.decode()}")
+                self.log_message(f"Error with {name}: {stderr.decode()}")
             else:
-                self.log_message(f"{name} erfolgreich gestartet!")
+                self.log_message(f"{name} started successfully!")
         except Exception as e:
-            self.log_message(f"Fehler beim Überprüfen von {name}: {e}")
+            self.log_message(f"Error checking {name}: {e}")
 
     def _upload_file(self, file_name: str) -> None:
-        """Lädt eine Datei auf den Server hoch."""
+        """Uploads a file to the server."""
         try:
             if os.path.isabs(file_name) and os.path.exists(file_name):
                 file_path = file_name
@@ -803,14 +803,14 @@ class FaceBot:
                         break
             
             if not file_path or not os.path.exists(file_path):
-                self.log_message(f"Datei '{file_name}' nicht gefunden. Gib einen gültigen Pfad oder Dateinamen an.")
+                self.log_message(f"File '{file_name}' not found. Provide a valid path or filename.")
                 return
             
             if not os.path.exists(self.config.winscp_path):
-                self.log_message(f"WinSCP nicht gefunden unter '{self.config.winscp_path}'. Installiere WinSCP.")
+                self.log_message(f"WinSCP not found at '{self.config.winscp_path}'. Install WinSCP.")
                 return
             
-            self.log_message(f"Lade '{file_path}' auf den Server...")
+            self.log_message(f"Uploading '{file_path}' to the server...")
             self.context.last_action = "upload"
             script_path = os.path.join(os.path.expanduser("~"), "upload_script.txt")
             if self.server_config["key_path"]:
@@ -833,19 +833,19 @@ class FaceBot:
                 cmd.extend(["/parameter", self.server_config["password"]])
             subprocess.run(cmd, shell=False, check=True)
             os.remove(script_path)
-            self.log_message("Datei erfolgreich hochgeladen!")
+            self.log_message("File uploaded successfully!")
         except Exception as e:
-            self.log_message(f"Fehler beim Hochladen: {e}. Überprüfe die Datei, Server-Daten und WinSCP-Installation.")
+            self.log_message(f"Error uploading: {e}. Check the file, server data, and WinSCP installation.")
 
     def _play_spotify_song(self, song_name: str) -> None:
-        """Spielt ein Lied auf Spotify ab."""
+        """Plays a song on Spotify."""
         try:
             if not self.driver:
-                self.log_message("Kein Browser verfügbar. Starte einen Browser neu.")
+                self.log_message("No browser available. Restarting a browser.")
                 self._initialize_browser()
                 if not self.driver:
                     return
-            self.log_message(f"Spiele '{song_name}' auf Spotify...")
+            self.log_message(f"Playing '{song_name}' on Spotify...")
             self.context.last_action = "play"
             self.context.user_preferences["music"] += 1
             
@@ -859,22 +859,22 @@ class FaceBot:
                     EC.element_to_be_clickable((By.CSS_SELECTOR, self.config.tracklist_css))
                 )
                 first_result.click()
-                self.log_message(f"'{song_name}' wird abgespielt! Falls es nicht startet, überprüfe deine Spotify-Anmeldung.")
+                self.log_message(f"'{song_name}' is playing! If it doesn't start, check your Spotify login.")
             except Exception as e:
-                self.log_message(f"Fehler beim Abspielen: {e}. Bist du in Spotify eingeloggt? Ist das Lied verfügbar?")
+                self.log_message(f"Error playing: {e}. Are you logged into Spotify? Is the song available?")
         except Exception as e:
-            self.log_message(f"Fehler beim Öffnen von Spotify: {e}. Überprüfe deine Internetverbindung und Browser.")
+            self.log_message(f"Error opening Spotify: {e}. Check your internet connection and browser.")
 
     def _send_discord_message(self, target: str, message: str) -> None:
-        """Sendet eine Nachricht auf Discord."""
+        """Sends a message on Discord."""
         try:
             if not self.driver:
-                self.log_message("Kein Browser verfügbar. Starte einen Browser neu.")
+                self.log_message("No browser available. Restarting a browser.")
                 self._initialize_browser()
                 if not self.driver:
                     return
             
-            self.log_message(f"Sende Nachricht an '{target}' auf Discord...")
+            self.log_message(f"Sending message to '{target}' on Discord...")
             self.context.last_action = "discord"
             
             self.driver.get(self.config.discord_login_url)
@@ -888,10 +888,10 @@ class FaceBot:
                 email_field.send_keys(self.config.discord_email)
                 password_field.send_keys(self.config.discord_password)
                 self.driver.find_element(By.CSS_SELECTOR, self.config.discord_submit_css).click()
-                self.log_message("Logge in Discord ein...")
-                WebDriverWait(self.driver, 15).until(EC.presence_of_element_located((By.CSS_SELECTOR, self.config.discord_message_css)))
+                self.log_message("Logging into Discord...")
+                WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, self.config.discord_message_css)))
             except Exception as e:
-                self.log_message(f"Fehler beim Discord-Login: {e}. Logge dich manuell ein oder überprüfe deine Zugangsdaten.")
+                self.log_message(f"Error logging into Discord: {e}. Log in manually or check your credentials.")
                 return
             
             try:
@@ -900,14 +900,14 @@ class FaceBot:
                 )
                 message_field.send_keys(f"@{target} {message}")
                 message_field.send_keys(Keys.RETURN)
-                self.log_message(f"Nachricht an '{target}' gesendet!")
+                self.log_message(f"Message sent to '{target}'!")
             except Exception as e:
-                self.log_message(f"Fehler beim Senden der Nachricht: {e}. Stelle sicher, dass der Discord-Kanal aktiv ist.")
+                self.log_message(f"Error sending message: {e}. Ensure the Discord channel is active.")
         except Exception as e:
-            self.log_message(f"Fehler beim Discord-Vorgang: {e}. Überprüfe deine Internetverbindung und Browser.")
+            self.log_message(f"Error in Discord operation: {e}. Check your internet connection and browser.")
 
     def _suggest_alternatives(self, target: str) -> List[Tuple[str, str]]:
-        """Generiert intelligente Vorschläge für ein nicht gefundenes Ziel."""
+        """Generates intelligent suggestions for a not-found target."""
         try:
             suggestions = []
             target_lower = target.lower()
@@ -931,38 +931,38 @@ class FaceBot:
                         weight += 0.3
                     if self.context.last_application == name:
                         weight += 0.4
-                    suggestions.append((name, score * weight, "ähnlicher Name (Tippfehler?)"))
+                    suggestions.append((name, score * weight, "similar name (typo?)"))
 
             if "." in target:
                 mime_type, _ = mimetypes.guess_type(target)
                 if mime_type:
                     if mime_type.startswith("text"):
-                        suggestions.append(("notepad", 90, "Textdatei erkannt, Notepad geeignet"))
+                        suggestions.append(("notepad", 90, "text file detected, Notepad suitable"))
                         if shutil.which("winword.exe"):
-                            suggestions.append(("word", 85, "Textdatei erkannt, Word geeignet"))
+                            suggestions.append(("word", 85, "text file detected, Word suitable"))
                     elif mime_type.startswith("image"):
-                        suggestions.append(("msedge.exe", 85, "Bilddatei erkannt, Browser geeignet"))
+                        suggestions.append(("msedge.exe", 85, "image file detected, browser suitable"))
                     elif mime_type.startswith("application/vnd"):
                         if shutil.which("excel.exe"):
-                            suggestions.append(("excel", 85, "Tabellendatei erkannt, Excel geeignet"))
+                            suggestions.append(("excel", 85, "spreadsheet detected, Excel suitable"))
 
             for name, exe in program_map.items():
                 if shutil.which(exe) and name not in [s[0] for s in suggestions]:
                     weight = 0.8
                     if self.context.user_preferences.get(name, 0) > max(self.context.user_preferences.values(), default=0):
                         weight += 0.3
-                    suggestions.append((name, weight * 80, "auf deinem System verfügbar"))
+                    suggestions.append((name, weight * 80, "available on your system"))
 
             suggestions = sorted(suggestions, key=lambda x: x[1], reverse=True)[:3]
             return [(name, reason) for name, _, reason in suggestions]
         except Exception as e:
-            self.log_message(f"Fehler bei der Vorschlagserstellung: {e}")
+            self.log_message(f"Error generating suggestions: {e}")
             return []
 
     def _open_file_or_program(self, target: str) -> None:
-        """Öffnet eine Datei oder ein Programm."""
+        """Opens a file or program."""
         try:
-            self.log_message(f"Öffne '{target}'...")
+            self.log_message(f"Opening '{target}'...")
             self.context.last_action = "open"
             self.context.last_application = target
             
@@ -983,42 +983,42 @@ class FaceBot:
                 program_path = shutil.which(executable)
                 if program_path:
                     subprocess.Popen([program_path], shell=False)
-                    self.log_message(f"Programm '{target}' gestartet!")
+                    self.log_message(f"Program '{target}' started!")
                     return
             
             if os.path.isabs(target) and os.path.exists(target):
                 os.startfile(target)
-                self.log_message(f"'{target}' geöffnet!")
+                self.log_message(f"'{target}' opened!")
                 return
             
             program_path = shutil.which(target)
             if program_path:
                 subprocess.Popen([program_path], shell=False)
-                self.log_message(f"Programm '{target}' gestartet!")
+                self.log_message(f"Program '{target}' started!")
                 return
             
             for root, _, files in os.walk(self.config.base_search_dir):
                 if target in files:
                     file_path = os.path.join(root, target)
                     os.startfile(file_path)
-                    self.log_message(f"Datei '{file_path}' geöffnet!")
+                    self.log_message(f"File '{file_path}' opened!")
                     return
             
             suggestions = self._suggest_alternatives(target)
             if suggestions:
                 suggestion_text = "\n".join([f"- {name}: {reason}" for name, reason in suggestions])
-                self.log_message(f"'{target}' nicht gefunden. Meintest du vielleicht:\n{suggestion_text}\nSag z. B. 'Öffne {suggestions[0][0]}' oder gib einen gültigen Pfad an.")
+                self.log_message(f"'{target}' not found. Did you mean:\n{suggestion_text}\nSay e.g., 'Open {suggestions[0][0]}' or provide a valid path.")
             else:
-                self.log_message(f"'{target}' nicht gefunden. Gib einen gültigen Pfad oder Programmnamen an, z. B. 'Öffne Edge'.")
+                self.log_message(f"'{target}' not found. Provide a valid path or program name, e.g., 'Open Edge'.")
         except Exception as e:
-            self.log_message(f"Fehler beim Öffnen von '{target}': {e}. Überprüfe den Pfad oder die Programmverfügbarkeit.")
+            self.log_message(f"Error opening '{target}': {e}. Check the path or program availability.")
 
     def run(self) -> None:
-        """Startet die Hauptschleife."""
+        """Starts the main loop."""
         try:
             self.root.mainloop()
         except Exception as e:
-            self.log_message(f"Fehler beim Ausführen: {e}")
+            self.log_message(f"Error running: {e}")
             if self.driver:
                 self.driver.quit()
 
@@ -1028,4 +1028,4 @@ if __name__ == "__main__":
         bot = FaceBot(root)
         bot.run()
     except Exception as e:
-        print(f"Fehler beim Starten des Bots: {e}")
+        print(f"Error starting the bot: {e}")
