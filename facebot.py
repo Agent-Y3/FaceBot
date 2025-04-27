@@ -527,23 +527,23 @@ class FaceBot:
                     break
             
             if not intent:
-intent_keywords = {
-    "open": ["open", "start", "launch"],
-    "play": ["play", "music"],
-    "search": ["search", "google", "find"],
-    "close": ["close", "quit", "exit"],
-    "maximize": ["maximize", "enlarge"],
-    "write": ["write", "type", "input"],
-    "save": ["save", "store"],
-    "click": ["click"],
-    "upload": ["upload", "send file"],
-    "discord": ["discord", "message", "send"],
-    "winscp": ["winscp", "server", "sftp"],
-    "putty": ["putty", "ssh", "terminal"],
-    "task": ["task", "do", "execute"],
-    "help": ["help", "commands"],
-    "exit": ["exit", "quit", "stop"]
-}
+                intent_keywords = {
+                    "open": ["öffne", "starte", "mach auf", "open"],
+                    "play": ["spiele", "spiel", "play", "musik"],
+                    "search": ["suche", "google", "find", "such", "search"],
+                    "close": ["schließe", "close", "beende", "schließ"],
+                    "maximize": ["maximiere", "maximize", "vergrößere"],
+                    "write": ["schreibe", "write", "tippe", "eingabe"],
+                    "save": ["speichere", "save", "sichern"],
+                    "click": ["klick", "click", "anklicken"],
+                    "upload": ["upload", "hochladen", "lade hoch", "lade datei"],
+                    "discord": ["discord", "nachricht", "senden"],
+                    "winscp": ["winscp", "server", "sftp"],
+                    "putty": ["putty", "ssh", "terminal"],
+                    "task": ["aufgabe", "task", "mache", "erledige"],
+                    "help": ["hilfe", "help", "befehle"],
+                    "exit": ["beenden", "exit", "schluss"]
+                }
                 for token in command_lower.split():
                     for key, keywords in intent_keywords.items():
                         if token in keywords:
