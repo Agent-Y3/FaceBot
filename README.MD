@@ -2,29 +2,29 @@
 
 ## Installation
 
-Um FaceBot zu installieren und zu starten, führe einfach die folgenden zwei Schritte aus:
+To install and start FaceBot, simply follow these two steps:
 
-1. **Installationsskript ausführen**:
-   - Stelle sicher, dass Python 3.10 oder höher installiert ist.
-   - Speichere `install_facebot.py` in `%userprofile%\Downloads`.
-   - Öffne eine Eingabeaufforderung und führe das Skript aus:
+1. **Run the installation script**:
+   - Make sure Python 3.10 or higher is installed.
+   - Save `install_facebot.py` to `%userprofile%\Downloads`.
+   - Open a Command Prompt and run the script:
      ```bash
      cd Downloads
      python3 install_facebot.py
      ```
-   - Das Skript richtet die virtuelle Umgebung (`C:\facebot_env`), installiert alle benötigten Python-Module und gibt Anweisungen für die Installation von WinSCP und PuTTY aus.
+   - The script will set up the virtual environment (`C:\facebot_env`), install all required Python modules, and provide instructions for installing WinSCP and PuTTY.
 
-2. **FaceBot starten**:
-   - Speichere `facebot.py` in `%userprofile%\Downloads`.
-   - Aktiviere die virtuelle Umgebung und starte den Bot:
+2. **Start FaceBot**:
+   - Save `facebot.py` to `%userprofile%\Downloads`.
+   - Activate the virtual environment and start the bot:
      ```bash
      C:\facebot_env\Scripts\activate
      cd Downloads
      python3 facebot.py
      ```
-   - Ein GUI-Fenster öffnet sich. Gib Befehle wie „Öffne Edge“, „Spiele Shape of You“ oder „Suche nach xAI“ ein oder sprich sie.
+   - A GUI window will open. You can type or speak commands like “Open Edge,” “Play Shape of You,” or “Search for xAI.”
 
-## Kontakt
+## Contact
 
-Bei Fragen oder Problemen kontaktiere mich ausschließlich über Discord:
+If you have any questions or encounter issues, please contact me exclusively via Discord:
 - **Discord**: @yu_dino
