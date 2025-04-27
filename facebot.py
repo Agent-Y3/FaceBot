@@ -47,6 +47,7 @@ class Config:
     putty_path: str = r"C:\Program Files\PuTTY\putty.exe"
     base_search_dir: str = os.path.expandvars(r"%userprofile%")
     spotify_search_url: str = "https://open.spotify.com/search/{}"
+    leta_search_url: str = "https://leta.mullvad.net/search?q={}&engine=brave"
     discord_login_url: str = "https://discord.com/login"
     tracklist_css: str = "div[data-testid='tracklist-row']"
     discord_email_css: str = "input[name='email']"
@@ -117,12 +118,12 @@ class FaceBot:
         self._load_config()
         self._initialize_browser()
         
-        self.log_message(f"Okay, I'm ready! Using browser: {self.browser_name.capitalize()}. Say e.g., 'Open Edge' or 'Search for xAI'.")
+        self.log_message(f"Okay, I'm ready! Using browser: {self.browser_name or 'Unknown'}. Say e.g., 'Open Edge' or 'Search for xAI'.")
 
     def _setup_logger(self) -> logging.Logger:
         """Sets up the logger."""
         logger = logging.getLogger("FaceBot")
-        logger.setLevel(logging.INFO)
+        logger.setLevel(logging.DEBUG)
         handler = logging.StreamHandler()
         handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
         logger.addHandler(handler)
@@ -380,6 +381,8 @@ class FaceBot:
                 return "firefox"
             elif "Edge" in prog_id or "IE" in prog_id:
                 return "edge"
+            elif "Opera" in prog_id:
+                return "opera"
             return "chrome"
         except Exception:
             return "chrome"
@@ -394,8 +397,18 @@ class FaceBot:
                 service = FirefoxService(GeckoDriverManager().install())
                 self.driver = webdriver.Firefox(service=service)
             elif self.browser_name == "edge":
+                options = webdriver.EdgeOptions()
+                options.add_argument("--disable-features=OptimizationHints")
+                options.add_argument("--no-sandbox")
+                options.add_argument("--disable-gpu")
                 service = EdgeService(EdgeChromiumDriverManager().install())
-                self.driver = webdriver.Edge(service=service)
+                self.driver = webdriver.Edge(service=service, options=options)
+            elif self.browser_name == "opera":
+                # Note: Opera requires ChromeDriver for Selenium
+                options = webdriver.ChromeOptions()
+                options.binary_location = shutil.which("opera.exe") or r"C:\Program Files\Opera\opera.exe"
+                service = ChromeService(ChromeDriverManager().install())
+                self.driver = webdriver.Chrome(service=service, options=options)
             else:
                 service = ChromeService(ChromeDriverManager().install())
                 self.driver = webdriver.Chrome(service=service)
@@ -412,6 +425,7 @@ class FaceBot:
             except Exception as e2:
                 self.log_message(f"Error starting Chrome: {e2}. Browser functions are disabled.")
                 self.driver = None
+                self.browser_name = "chrome"
 
     def log_message(self, message: str) -> None:
         """Logs a message."""
@@ -436,6 +450,7 @@ class FaceBot:
                 "microsoft edge": "Microsoft Edge",
                 "chrome": "Google Chrome",
                 "firefox": "Firefox",
+                "opera": "Opera",
                 "word": "Microsoft Word",
                 "excel": "Microsoft Excel",
                 "notepad": "Notepad",
@@ -445,7 +460,8 @@ class FaceBot:
             window_title = app_map.get(app_name.lower(), app_name)
 
             def enum_windows_callback(hwnd, results):
-                if window_title.lower() in win32gui.GetWindowText(hwnd).lower() and win32gui.IsWindowVisible(hwnd):
+                window_text = win32gui.GetWindowText(hwnd).lower()
+                if window_title.lower() in window_text or app_name.lower() in window_text and win32gui.IsWindowVisible(hwnd):
                     results.append(hwnd)
 
             handles = []
@@ -469,11 +485,12 @@ class FaceBot:
         try:
             intent = None
             params = {}
+            self.logger.debug(f"Parsing command: '{command}'")
             
             patterns = {
                 "open": r"^(?:öffne|starte|mach\s+auf|open)\s+(.+)$",
                 "play": r"^(?:spiele|spiel|play|musik)\s+(.+)$",
-                "search": r"^(?:suche|google|find|such)\s*(?:nach)?\s+(.+?)(?:\s+in\s+(edge|microsoft\s+edge|chrome|firefox))?$",
+                "search": r"^(?:suche|google|find|such|search)\s*(?:nach|for)?\s+(.+?)(?:\s+in\s+([a-zA-Z\s]+))?\s*$",
                 "close": r"^(?:schließe|close|beende|schließ)\s+(.+)$",
                 "maximize": r"^(?:maximiere|maximize|vergrößere)\s+(.+)$",
                 "write": r"^(?:schreibe|write|tippe|eingabe)\s+(.+?)(?:\s+in\s+(word|excel|notepad))?$",
@@ -489,13 +506,16 @@ class FaceBot:
             }
             
             command_lower = command.lower().strip()
+            self.logger.debug(f"Normalized command: '{command_lower}'")
             for intent_name, pattern in patterns.items():
                 match = re.match(pattern, command_lower)
+                self.logger.debug(f"Testing pattern '{intent_name}': {'Match' if match else 'No match'}")
                 if match:
                     intent = intent_name
                     if intent == "search":
                         params["search_term"] = match.group(1).strip()
-                        params["browser"] = match.group(2) if len(match.groups()) > 1 else None
+                        params["browser"] = match.group(2).strip() if len(match.groups()) > 1 and match.group(2) else None
+                        self.logger.debug(f"Search params: term='{params['search_term']}', browser='{params['browser']}'")
                     elif intent in ["open", "play", "close", "maximize", "save", "upload", "task"]:
                         params["target"] = match.group(1).strip()
                     elif intent == "write":
@@ -507,28 +527,29 @@ class FaceBot:
                     break
             
             if not intent:
-                intent_keywords = {
-                    "open": ["öffne", "starte", "mach auf", "open"],
-                    "play": ["spiele", "spiel", "play", "musik"],
-                    "search": ["suche", "google", "find", "such"],
-                    "close": ["schließe", "close", "beende", "schließ"],
-                    "maximize": ["maximiere", "maximize", "vergrößere"],
-                    "write": ["schreibe", "write", "tippe", "eingabe"],
-                    "save": ["speichere", "save", "sichern"],
-                    "click": ["klick", "click", "anklicken"],
-                    "upload": ["upload", "hochladen", "lade hoch", "lade datei"],
-                    "discord": ["discord", "nachricht", "senden"],
-                    "winscp": ["winscp", "server", "sftp"],
-                    "putty": ["putty", "ssh", "terminal"],
-                    "task": ["aufgabe", "task", "mache", "erledige"],
-                    "help": ["hilfe", "help", "befehle"],
-                    "exit": ["beenden", "exit", "schluss"]
-                }
+intent_keywords = {
+    "open": ["open", "start", "launch"],
+    "play": ["play", "music"],
+    "search": ["search", "google", "find"],
+    "close": ["close", "quit", "exit"],
+    "maximize": ["maximize", "enlarge"],
+    "write": ["write", "type", "input"],
+    "save": ["save", "store"],
+    "click": ["click"],
+    "upload": ["upload", "send file"],
+    "discord": ["discord", "message", "send"],
+    "winscp": ["winscp", "server", "sftp"],
+    "putty": ["putty", "ssh", "terminal"],
+    "task": ["task", "do", "execute"],
+    "help": ["help", "commands"],
+    "exit": ["exit", "quit", "stop"]
+}
                 for token in command_lower.split():
                     for key, keywords in intent_keywords.items():
                         if token in keywords:
                             intent = key
-                            params["target"] = command_lower.replace(token, "").strip()
+                            params["target"] = command_lower.replace(token, "").replace("for", "").strip()
+                            self.logger.debug(f"Fallback intent: '{intent}', target='{params['target']}'")
                             break
                     if intent:
                         break
@@ -540,7 +561,7 @@ class FaceBot:
             
             return intent, params
         except Exception as e:
-            self.log_message(f"Error parsing command: {e}. Try a clearer command.")
+            self.logger.error(f"Error parsing command: {e}. Try a clearer command.")
             return None, {}
 
     def _execute_task(self, task: str) -> None:
@@ -563,32 +584,17 @@ class FaceBot:
                 
                 if intent == "open" and "tab" in step:
                     browser = params.get("target", self.browser_name)
-                    if browser not in ["edge", "chrome", "firefox", "microsoft edge"]:
-                        browser = self.browser_name
                     self._focus_application(browser)
                     self.root.after(100, lambda: subprocess.run(["start", ""], shell=True))
-                    self.log_message(f"New tab opened in {browser.capitalize()}!")
+                    self.log_message(f"New tab opened in {browser}!")
                 
                 elif intent == "search":
-                    search_term = params.get("search_term", step.replace("suche", "").replace("nach", "").strip())
+                    search_term = params.get("search_term", step.replace("suche", "").replace("nach", "").replace("search", "").replace("for", "").strip())
                     browser = params.get("browser", self.browser_name)
                     if not search_term:
                         self.log_message("No search term provided. What should I search for?")
                         continue
-                    if browser not in ["edge", "microsoft edge", "chrome", "firefox"]:
-                        browser = self.browser_name
-                    if not self.driver:
-                        self.log_message("No browser available. Restarting a browser.")
-                        self._initialize_browser()
-                        if not self.driver:
-                            continue
-                    self.log_message(f"Searching for '{search_term}' in {browser.capitalize()}...")
-                    self._open_file_or_program(browser)
-                    self._focus_application(browser)
-                    encoded_term = quote(search_term)
-                    self.driver.get(f"https://www.google.com/search?q={encoded_term}")
-                    WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-                    self.log_message(f"Search for '{search_term}' completed!")
+                    self._search_leta(search_term, browser)
                 
                 elif intent == "close":
                     app = params.get("target", self.context.last_application)
@@ -674,7 +680,7 @@ class FaceBot:
                     self.driver.quit()
                 self.root.quit()
             elif intent == "help":
-                self.log_message("I can do the following:\n- Open programs: 'Open Edge'\n- Search: 'Search for xAI'\n- Play music: 'Play Shape of You'\n- Upload files: 'Upload document.txt'\n- Discord messages: 'Send to @user Hello'\n- Server: 'Start WinSCP', 'Start PuTTY'\n- Write: 'Write in Word Hello'\n- Exit: 'Exit'\n- Help: 'Help'")
+                self.log_message("I can do the following:\n- Open programs: 'Open Edge'\n- Search: 'Search for xAI' or 'Suche nach xAI'\n- Play music: 'Play Shape of You'\n- Upload files: 'Upload document.txt'\n- Discord messages: 'Send to @user Hello'\n- Server: 'Start WinSCP', 'Start PuTTY'\n- Write: 'Write in Word Hello'\n- Exit: 'Exit'\n- Help: 'Help'")
             elif intent == "click":
                 self._perform_click()
             elif intent == "winscp":
@@ -720,6 +726,13 @@ class FaceBot:
                     self.log_message("Which song should I play? Say e.g., 'Play Shape of You'.")
                     return
                 self._play_spotify_song(song_name)
+            elif intent == "search":
+                search_term = params.get("search_term")
+                browser = params.get("browser", self.browser_name)
+                if not search_term:
+                    self.log_message("What should I search for? Say e.g., 'Search for xAI'.")
+                    return
+                self._search_leta(search_term, browser)
             elif intent == "open":
                 target = params.get("target")
                 if not target:
@@ -865,6 +878,29 @@ class FaceBot:
         except Exception as e:
             self.log_message(f"Error opening Spotify: {e}. Check your internet connection and browser.")
 
+    def _search_leta(self, search_term: str, browser: Optional[str]) -> None:
+        """Searches using Mullvad Leta with Brave engine."""
+        try:
+            if not self.driver:
+                self.log_message("No browser available. Restarting a browser.")
+                self._initialize_browser()
+                if not self.driver:
+                    return
+            browser = browser or self.browser_name or "chrome"
+            self.log_message(f"Searching for '{search_term}' on Mullvad Leta (Brave) in {browser}...")
+            self.context.last_action = "search"
+            self.context.user_preferences["browser"] += 1
+            
+            encoded_term = quote(search_term)
+            search_url = self.config.leta_search_url.format(encoded_term)
+            self._open_file_or_program(browser)
+            self._focus_application(browser)
+            self.driver.get(search_url)
+            WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+            self.log_message(f"Search for '{search_term}' completed!")
+        except Exception as e:
+            self.log_message(f"Error searching on Leta: {e}. Check your internet connection and browser.")
+
     def _send_discord_message(self, target: str, message: str) -> None:
         """Sends a message on Discord."""
         try:
@@ -916,6 +952,7 @@ class FaceBot:
                 "edge": "msedge.exe",
                 "chrome": "chrome.exe",
                 "firefox": "firefox.exe",
+                "opera": "opera.exe",
                 "word": "winword.exe",
                 "excel": "excel.exe",
                 "notepad": "notepad.exe",
@@ -927,7 +964,7 @@ class FaceBot:
                 score = fuzz.ratio(target_lower, name.lower())
                 if score > 85:
                     weight = 1.0
-                    if self.context.user_preferences.get("browser", 0) > 0 and name in ["edge", "chrome", "firefox", "microsoft edge"]:
+                    if self.context.user_preferences.get("browser", 0) > 0 and name in ["edge", "chrome", "firefox", "opera", "microsoft edge"]:
                         weight += 0.3
                     if self.context.last_application == name:
                         weight += 0.4
@@ -971,6 +1008,7 @@ class FaceBot:
                 "edge": "msedge.exe",
                 "chrome": "chrome.exe",
                 "firefox": "firefox.exe",
+                "opera": "opera.exe",
                 "word": "winword.exe",
                 "excel": "excel.exe",
                 "notepad": "notepad.exe",
@@ -978,7 +1016,8 @@ class FaceBot:
                 "discord": "Discord.exe"
             }
             
-            executable = program_map.get(target.lower())
+            target_lower = target.lower().strip()
+            executable = program_map.get(target_lower)
             if executable:
                 program_path = shutil.which(executable)
                 if program_path:
@@ -986,15 +1025,16 @@ class FaceBot:
                     self.log_message(f"Program '{target}' started!")
                     return
             
-            if os.path.isabs(target) and os.path.exists(target):
-                os.startfile(target)
-                self.log_message(f"'{target}' opened!")
-                return
-            
+            # Try to find any executable with the given name
             program_path = shutil.which(target)
             if program_path:
                 subprocess.Popen([program_path], shell=False)
                 self.log_message(f"Program '{target}' started!")
+                return
+            
+            if os.path.isabs(target) and os.path.exists(target):
+                os.startfile(target)
+                self.log_message(f"'{target}' opened!")
                 return
             
             for root, _, files in os.walk(self.config.base_search_dir):

@@ -1,7 +1,6 @@
 import os
 import sys
 import subprocess
-import urllib.request
 import shutil
 import argparse
 import importlib.util
@@ -18,7 +17,8 @@ REQUIRED_MODULES = [
     "pywin32",
     "fuzzywuzzy",
     "python-Levenshtein",
-    "cryptography"
+    "cryptography",
+    "speechrecognition"
 ]
 WINSCP_PATH = r"C:\Program Files (x86)\WinSCP\WinSCP.exe"
 PUTTY_PATH = r"C:\Program Files\PuTTY\putty.exe"
@@ -39,7 +39,7 @@ def check_tkinter():
         print_status("tkinter is available.")
         return True
     except ImportError:
-        print_status("tkinter not found. Ensure your Python installation includes tkinter (usually included by default).", "red")
+        print_status("tkinter not found. Install it with: 'pip install tk' or ensure your Python installation includes tkinter (usually included on Windows).", "red")
         return False
 
 def main(facebot_script_path=""):
@@ -60,13 +60,14 @@ def main(facebot_script_path=""):
     if check_command("python"):
         try:
             result = subprocess.run(["python", "--version"], capture_output=True, text=True, check=True)
-            python_version = tuple(map(int, result.stdout.split()[1].split(".")))
+            version_str = result.stdout.split()[1]
+            python_version = tuple(map(int, version_str.split(".")))
             if python_version >= PYTHON_MIN_VERSION:
-                print_status(f"Python {'.'.join(map(str, python_version))} is installed.")
+                print_status(f"Python {version_str} is installed.")
             else:
-                print_status(f"Python version {'.'.join(map(str, python_version))} is too old. At least {'.'.join(map(str, PYTHON_MIN_VERSION))} required.", "yellow")
+                print_status(f"Python version {version_str} is too old. At least Python {'.'.join(map(str, PYTHON_MIN_VERSION))} is required.", "yellow")
                 install_python = True
-        except subprocess.CalledProcessError:
+        except (subprocess.CalledProcessError, ValueError):
             print_status("Error retrieving Python version.", "red")
             install_python = True
     else:
@@ -74,13 +75,19 @@ def main(facebot_script_path=""):
         install_python = True
 
     if install_python:
-        print_status("Python installation is not automatically supported. Please install Python 3.10 manually from: https://www.python.org/downloads/", "red")
+        print_status("Please install Python 3.8 or higher manually from: https://www.python.org/downloads/. Ensure 'Add Python to PATH' is checked during installation.", "red")
         sys.exit(1)
 
     # 3. Check tkinter
     print_status("Checking tkinter...")
     if not check_tkinter():
-        sys.exit(1)
+        print_status("Attempting to install tkinter...")
+        try:
+            subprocess.run([sys.executable, "-m", "pip", "install", "tk", "--quiet"], check=True)
+            print_status("tkinter successfully installed.")
+        except subprocess.CalledProcessError:
+            print_status("Failed to install tkinter. Ensure your Python installation includes tkinter or install it manually.", "red")
+            sys.exit(1)
 
     # 4. Update pip
     print_status("Updating pip...")
@@ -88,11 +95,11 @@ def main(facebot_script_path=""):
         subprocess.run([sys.executable, "-m", "pip", "install", "--upgrade", "pip", "--quiet"], check=True)
         print_status("pip successfully updated.")
     except subprocess.CalledProcessError:
-        print_status("Error updating pip.", "red")
+        print_status("Error updating pip. Ensure you have an active internet connection.", "red")
         sys.exit(1)
 
-    # 5. Visual C++ Build Tools cannot be installed directly
-    print_status("Note: Visual C++ Build Tools are required for pyaudio. Download them if needed from: https://aka.ms/vs/16/release/vs_buildtools.exe", "yellow")
+    # 5. Visual C++ Build Tools notice
+    print_status("Note: Visual C++ Build Tools are required for pyaudio. If installation fails, download them from: https://aka.ms/vs/17/release/vs_BuildTools.exe", "yellow")
 
     # 6. Install Python modules
     print_status("Installing Python modules...")
@@ -106,7 +113,7 @@ def main(facebot_script_path=""):
                 subprocess.run([sys.executable, "-m", "pip", "install", module, "--quiet"], check=True)
                 print_status(f"{module} successfully installed.")
         except subprocess.CalledProcessError:
-            print_status(f"Error installing {module}.", "red")
+            print_status(f"Error installing {module}. Check your internet connection or install manually with 'pip install {module}'.", "red")
             sys.exit(1)
 
     # 7. Check WinSCP
@@ -130,17 +137,17 @@ def main(facebot_script_path=""):
             shutil.copy(facebot_script_path, os.path.join(FACEBOT_DIR, "facebot.py"))
             print_status("facebot.py successfully copied.")
         except Exception as e:
-            print_status(f"Error copying facebot.py: {e}", "red")
+            print_status(f"Error copying facebot.py: {e}. Ensure the file is accessible and the destination is writable.", "red")
             sys.exit(1)
     else:
-        print_status(f"No facebot.py path provided or file not found. Copy facebot.py manually to {FACEBOT_DIR}.", "yellow")
+        print_status(f"No valid facebot.py path provided or file not found. Copy facebot.py manually to {FACEBOT_DIR} or provide the correct path with --facebot-script-path.", "yellow")
 
     # 10. Completion
-    print_status("Installation completed!", "green")
+    print_status("Installation completed successfully!", "green")
     print_status("How to start FaceBot:")
     print_status(f"1. Navigate to: cd {FACEBOT_DIR}")
     print_status("2. Start the bot: python facebot.py")
-    print_status("If issues occur, check the internet connection and the installation of WinSCP/PuTTY.")
+    print_status("If issues occur, ensure WinSCP/PuTTY are installed and check your internet connection.")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Installs FaceBot dependencies.")
