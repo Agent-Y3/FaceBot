@@ -282,9 +282,9 @@ class FaceBot:
                     self.listen_button.config(text="Stop Microphone")
                     self.audio_thread = threading.Thread(target=self._listen_for_commands, daemon=True)
                     self.audio_thread.start()
-                    self.log_message("Microphone is on. Tell me what to do!")
+                    self.log_message("Hearing...")
                 except Exception as e:
-                    self.log_message(f"Error: Microphone not available ({e}). Use text input.")
+                    self.log_message(f"Error: cant find Microphone. ({e}). Use text input.")
             else:
                 self.listening = False
                 self.listen_button.config(text="Microphone")
