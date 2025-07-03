@@ -35,7 +35,6 @@ from fuzzywuzzy import fuzz
 import mimetypes
 import spacy
 from gtts import gTTS
-import pygame
 import io
 import threading
 import pyautogui
@@ -72,19 +71,23 @@ def handle_errors(method: Callable) -> Callable:
         try:
             return await method(self, *args, **kwargs)
         except (ConfigError, BrowserError, SpeechError, UIError, CommandError) as e:
-            self.logger.log_message(f"{method.__name__.replace('_', ' ').title()} failed: {str(e)}")
+            logger = kwargs.get('logger') or getattr(self, 'logger', logging.getLogger("FaceBot"))
+            logger.log_message(f"{method.__name__.replace('_', ' ').title()} failed: {str(e)}") if hasattr(logger, 'log_message') else logger.error(f"{method.__name__.replace('_', ' ').title()} failed: {str(e)}")
             return None
         except Exception as e:
-            self.logger.log_message(f"Unexpected error in {method.__name__.replace('_', ' ').title()}: {str(e)}")
+            logger = kwargs.get('logger') or getattr(self, 'logger', logging.getLogger("FaceBot"))
+            logger.log_message(f"Unexpected error in {method.__name__.replace('_', ' ').title()}: {str(e)}") if hasattr(logger, 'log_message') else logger.error(f"Unexpected error in {method.__name__.replace('_', ' ').title()}: {str(e)}")
             return None
     def sync_wrapper(self, *args, **kwargs):
         try:
             return method(self, *args, **kwargs)
         except (ConfigError, BrowserError, SpeechError, UIError, CommandError) as e:
-            self.logger.log_message(f"{method.__name__.replace('_', ' ').title()} failed: {str(e)}")
+            logger = kwargs.get('logger') or getattr(self, 'logger', logging.getLogger("FaceBot"))
+            logger.log_message(f"{method.__name__.replace('_', ' ').title()} failed: {str(e)}") if hasattr(logger, 'log_message') else logger.error(f"{method.__name__.replace('_', ' ').title()} failed: {str(e)}")
             return None
         except Exception as e:
-            self.logger.log_message(f"Unexpected error in {method.__name__.replace('_', ' ').title()}: {str(e)}")
+            logger = kwargs.get('logger') or getattr(self, 'logger', logging.getLogger("FaceBot"))
+            logger.log_message(f"Unexpected error in {method.__name__.replace('_', ' ').title()}: {str(e)}") if hasattr(logger, 'log_message') else logger.error(f"Unexpected error in {method.__name__.replace('_', ' ').title()}: {str(e)}")
             return None
     return async_wrapper if asyncio.iscoroutinefunction(method) else sync_wrapper
 
@@ -122,11 +125,11 @@ class Context:
         self.user_preferences = self.user_preferences or {"music": 0, "browser": 0, "document": 0}
 
 class ConfigManager:
-    def __init__(self):
+    def __init__(self, logger):
         self.config = Config()
         self.fernet = None
         self.server_config = None
-        self.logger = logging.getLogger("FaceBot")
+        self.logger = logger
         self._setup_encryption()
         self._load_config()
 
@@ -167,7 +170,7 @@ class ConfigManager:
             self.config.enable_speech = config_data.get('speech_enabled', self.config.enable_speech)
             self.config.enable_listening = config_data.get('enable_listening', self.config.enable_listening)
         except Exception as e:
-            raise ConfigError(f"Failed to load configuration: {e}. Using defaults.")
+            raise ConfigError(f"Konfiguration konnte nicht geladen werden: {e}. Verwende Standardwerte.")
 
     @handle_errors
     def _save_config(self):
@@ -187,10 +190,10 @@ class ConfigManager:
             json.dump(config_data, f, indent=4)
 
 class BrowserManager:
-    def __init__(self):
+    def __init__(self, logger):
         self.driver = None
         self.browser_name = None
-        self.logger = logging.getLogger("FaceBot")
+        self.logger = logger
         self.session_cache = {}
 
     def __enter__(self):
@@ -246,35 +249,35 @@ class BrowserManager:
                 break
             except Exception as e:
                 if attempt == 1:
-                    raise BrowserError(f"Failed to initialize {self.browser_name}: {e}. Browser functions disabled.")
+                    raise BrowserError(f"Initialisierung von {self.browser_name} fehlgeschlagen: {e}. Browserfunktionen deaktiviert.")
                 self.browser_name = "chrome"
 
     @handle_errors
-    async def navigate_to_url(self, url: str, browser: Optional[str], logger, context: Context):
+    async def navigate_to_url(self, url: str, browser: Optional[str], context: Context):
         parsed_url = urlparse(url)
         if not parsed_url.scheme or not parsed_url.netloc:
-            raise BrowserError(f"Invalid URL '{url}'")
+            raise BrowserError(f"Ungültige URL '{url}'")
         if not self.driver:
             self.initialize()
             if not self.driver:
-                raise BrowserError("Failed to initialize browser")
+                raise BrowserError("Browser konnte nicht initialisiert werden")
         browser = browser or self.browser_name or "chrome"
-        logger.log_message(f"Navigating to '{url}' in {browser}...")
+        self.logger.log_message(f"Navigiere zu '{url}' in {browser}...")
         context.last_action = "goto"
         context.user_preferences["browser"] += 1
-        await self._focus_application(browser, logger)
+        await self._focus_application(browser)
         for attempt in range(2):
             try:
                 self.driver.get(url)
                 WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-                logger.log_message(f"Navigation to '{url}' completed!")
+                self.logger.log_message(f"Navigation zu '{url}' abgeschlossen!")
                 return
             except Exception as e:
                 if attempt == 1:
-                    raise BrowserError(f"Error navigating to '{url}': {e}")
+                    raise BrowserError(f"Fehler beim Navigieren zu '{url}': {e}")
 
     @handle_errors
-    async def _focus_application(self, app_name: str, logger):
+    async def _focus_application(self, app_name: str):
         app_map = {
             "edge": "Microsoft Edge",
             "microsoft edge": "Microsoft Edge",
@@ -298,15 +301,15 @@ class BrowserManager:
             hwnd = handles[0]
             win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
             win32gui.SetForegroundWindow(hwnd)
-            logger.log_message(f"Application '{app_name}' focused.")
+            self.logger.log_message(f"Anwendung '{app_name}' fokussiert.")
             return True
-        logger.log_message(f"Application '{app_name}' not found. Starting it...")
-        await self._open_file_or_program(app_name, logger)
+        self.logger.log_message(f"Anwendung '{app_name}' nicht gefunden. Starte sie...")
+        await self._open_file_or_program(app_name)
         return True
 
     @handle_errors
-    async def _open_file_or_program(self, target: str, logger):
-        logger.log_message(f"Opening '{target}'...")
+    async def _open_file_or_program(self, target: str):
+        self.logger.log_message(f"Öffne '{target}'...")
         program_map = {
             "microsoft edge": "msedge",
             "edge": "msedge",
@@ -327,34 +330,34 @@ class BrowserManager:
                 pyautogui.hotkey("win", "r")
                 pyautogui.write(f"{executable}.exe")
                 pyautogui.press("enter")
-                logger.log_message(f"Program '{target}' started!")
+                self.logger.log_message(f"Programm '{target}' gestartet!")
                 return
         program_path = shutil.which(target)
         if program_path:
             pyautogui.hotkey("win", "r")
             pyautogui.write(program_path)
             pyautogui.press("enter")
-            logger.log_message(f"Program '{target}' started!")
+            self.logger.log_message(f"Programm '{target}' gestartet!")
             return
         if os.path.isabs(target) and os.path.exists(target):
             os.startfile(target)
-            logger.log_message(f"'{target}' opened!")
+            self.logger.log_message(f"'{target}' geöffnet!")
             return
         for root, _, files in os.walk(self.config.base_search_dir, maxdepth=3):
             if target in files:
                 file_path = os.path.join(root, target)
                 os.startfile(file_path)
-                logger.log_message(f"File '{file_path}' opened!")
+                self.logger.log_message(f"Datei '{file_path}' geöffnet!")
                 return
-        suggestions = self._suggest_alternatives(target, logger)
+        suggestions = self._suggest_alternatives(target)
         if suggestions:
             suggestion_text = "\n".join([f"- {name}: {reason}" for name, reason in suggestions])
-            logger.log_message(f"'{target}' not found. Did you mean:\n{suggestion_text}\nSay e.g., 'Open {suggestions[0][0]}'.")
+            self.logger.log_message(f"'{target}' nicht gefunden. Meintest du:\n{suggestion_text}\nSage z.B. 'Öffne {suggestions[0][0]}'.")
         else:
-            logger.log_message(f"'{target}' not found. Provide valid path or program.")
+            self.logger.log_message(f"'{target}' nicht gefunden. Gib einen gültigen Pfad oder ein Programm an.")
 
     @handle_errors
-    def _suggest_alternatives(self, target: str, logger) -> List[Tuple[str, str]]:
+    def _suggest_alternatives(self, target: str) -> List[Tuple[str, str]]:
         suggestions = []
         target_lower = target.lower()
         program_map = {
@@ -372,32 +375,32 @@ class BrowserManager:
         for name in program_map.keys():
             score = fuzz.ratio(target_lower, name.lower())
             if score > 85:
-                suggestions.append((name, "similar name"))
+                suggestions.append((name, "ähnlicher Name"))
         if "." in target:
             mime_type, _ = mimetypes.guess_type(target)
             if mime_type:
                 if mime_type.startswith("text"):
-                    suggestions.append(("notepad", "text file"))
+                    suggestions.append(("notepad", "Textdatei"))
                     if shutil.which("winword.exe"):
-                        suggestions.append(("word", "text file"))
+                        suggestions.append(("word", "Textdatei"))
                 elif mime_type.startswith("image"):
-                    suggestions.append(("msedge.exe", "image file"))
+                    suggestions.append(("msedge.exe", "Bilddatei"))
                 elif mime_type.startswith("application/vnd"):
                     if shutil.which("excel.exe"):
-                        suggestions.append(("excel", "spreadsheet"))
+                        suggestions.append(("excel", "Tabellendokument"))
         for name, exe in program_map.items():
             if shutil.which(exe) and name not in [s[0] for s in suggestions]:
-                suggestions.append((name, "available on system"))
+                suggestions.append((name, "auf dem System verfügbar"))
         suggestions = sorted(suggestions, key=lambda x: fuzz.ratio(target_lower, x[0]), reverse=True)[:3]
         return suggestions
 
 class SpeechManager:
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, logger):
         self.config = config
         self.recognizer = sr.Recognizer()
         self.listening = False
         self.audio_queue = queue.Queue()
-        self.logger = logging.getLogger("FaceBot")
+        self.logger = logger
         self.nlp = spacy.load("en_core_web_sm")
 
     @handle_errors
@@ -437,7 +440,7 @@ class SpeechManager:
                 self.recognizer.adjust_for_ambient_noise(source, duration=1)
                 self.recognizer.dynamic_energy_threshold = True
                 self.recognizer.energy_threshold = 300
-                bot.logger.log_message("Speech recognition active. Speak clearly, e.g., 'Open Edge'.")
+                self.logger.log_message("Spracherkennung aktiv. Sprich deutlich, z.B. 'Öffne Edge'.")
                 threading.Thread(target=self._update_audio_indicator, args=(bot.logger.indicator_canvas, bot.logger.bars), daemon=True).start()
                 while self.listening:
                     try:
@@ -449,32 +452,32 @@ class SpeechManager:
                         for attempt in range(2):
                             try:
                                 command = self.recognizer.recognize_google(audio, language="en-US")
-                                bot.logger.log_message(f"You said: {command}")
+                                self.logger.log_message(f"Du hast gesagt: {command}")
                                 bot.root.after(0, bot.process_command, None, command)
                                 error_count = 0
                                 break
                             except sr.RequestError as e:
                                 if attempt == 1:
-                                    raise SpeechError(f"Speech recognition error: {e}. Check internet.")
+                                    raise SpeechError(f"Fehler bei der Spracherkennung: {e}. Überprüfe die Internetverbindung.")
                             except sr.UnknownValueError:
                                 error_count += 1
                                 if error_count >= 3:
-                                    bot.logger.log_message("Multiple unclear inputs. Speak louder or check microphone.")
+                                    self.logger.log_message("Mehrere unklare Eingaben. Sprich lauter oder überprüfe das Mikrofon.")
                                     error_count = 0
                                 break
                     except sr.WaitTimeoutError:
                         error_count = 0
                     except Exception as e:
-                        raise SpeechError(f"Speech recognition error: {e}.")
+                        raise SpeechError(f"Fehler bei der Spracherkennung: {e}.")
                     await asyncio.sleep(0.1)
         except Exception as e:
-            raise SpeechError(f"Error starting speech recognition: {e}. Speech disabled.")
+            raise SpeechError(f"Fehler beim Starten der Spracherkennung: {e}. Spracherkennung deaktiviert.")
         finally:
             self.listening = False
-            bot.logger.listen_button.configure(text="Microphone")
+            bot.logger.listen_button.configure(text="Mikrofon")
             for bar in bot.logger.bars:
                 bot.logger.indicator_canvas.coords(bar, 10 + bot.logger.bars.index(bar) * 20, 25, 25 + bot.logger.bars.index(bar) * 20, 25)
-            bot.logger.log_message("Microphone turned off.")
+            self.logger.log_message("Mikrofon ausgeschaltet.")
 
 class UIManager:
     def __init__(self, root: ctk.CTk, bot: 'FaceBot'):
@@ -497,15 +500,15 @@ class UIManager:
         self.chat_area.grid(row=0, column=0, columnspan=3, padx=10, pady=10, sticky="nsew")
         input_frame = ctk.CTkFrame(self.root)
         input_frame.grid(row=1, column=0, columnspan=3, padx=10, pady=5, sticky="ew")
-        self.input_field = ctk.CTkEntry(input_frame, placeholder_text="Enter command...")
+        self.input_field = ctk.CTkEntry(input_frame, placeholder_text="Befehl eingeben...")
         self.input_field.grid(row=0, column=0, sticky="ew", padx=(0, 5))
         self.input_field.bind("<Return>", self.bot.process_command)
         input_frame.grid_columnconfigure(0, weight=1)
-        self.send_button = ctk.CTkButton(input_frame, text="Send", command=self.bot.process_command)
+        self.send_button = ctk.CTkButton(input_frame, text="Senden", command=self.bot.process_command)
         self.send_button.grid(row=0, column=1, padx=5)
-        self.listen_button = ctk.CTkButton(input_frame, text="Microphone", command=self.bot.toggle_listening)
+        self.listen_button = ctk.CTkButton(input_frame, text="Mikrofon", command=self.bot.toggle_listening)
         self.listen_button.grid(row=0, column=2, padx=5)
-        self.config_button = ctk.CTkButton(input_frame, text="Settings", command=self.bot._open_config_ui)
+        self.config_button = ctk.CTkButton(input_frame, text="Einstellungen", command=self.bot._open_config_ui)
         self.config_button.grid(row=0, column=3, padx=5)
         self.indicator_canvas = ctk.CTkCanvas(self.root, width=100, height=30, bg='black', highlightthickness=0)
         self.indicator_canvas.grid(row=2, column=0, columnspan=3, pady=5)
@@ -525,14 +528,15 @@ class UIManager:
                 self.chat_area.see("end")
                 self.root.update()
             except Exception as e:
-                logging.getLogger("FaceBot").error(f"UI update failed: {e}")
+                logging.getLogger("FaceBot").error(f"UI-Aktualisierung fehlgeschlagen: {e}")
         self.root.after(0, update_gui)
         logging.getLogger("FaceBot").info(message)
         asyncio.create_task(self.bot.speech_manager._speak(message))
 
 class CommandRegistry:
-    def __init__(self):
+    def __init__(self, logger):
         self.commands = {}
+        self.logger = logger
         self.nlp = spacy.load("en_core_web_sm")
 
     def register(self, intent: str, keywords: List[str]):
@@ -594,10 +598,10 @@ class FaceBot:
         self.config = Config()
         self.context = Context()
         self.logger = UIManager(root, self)
-        self.browser_manager = BrowserManager()
-        self.speech_manager = SpeechManager(self.config)
-        self.config_manager = ConfigManager()
-        self.command_registry = CommandRegistry()
+        self.browser_manager = BrowserManager(self.logger)
+        self.speech_manager = SpeechManager(self.config, self.logger)
+        self.config_manager = ConfigManager(self.logger)
+        self.command_registry = CommandRegistry(self.logger)
         self._setup_logger()
         self._register_commands()
         try:
@@ -621,7 +625,7 @@ class FaceBot:
             target = params.get("target")
             if not target:
                 raise CommandError("Was soll geöffnet werden? Sage z.B. 'Öffne Edge'.")
-            await self.browser_manager._open_file_or_program(target, self.logger)
+            await self.browser_manager._open_file_or_program(target)
 
         @self.command_registry.register("play", ["play", "music", "spiele", "musik"])
         async def play_command(self, params):
@@ -644,14 +648,14 @@ class FaceBot:
             browser = params.get("browser", self.browser_manager.browser_name)
             if not url:
                 raise CommandError("Welche Website soll ich öffnen? Sage z.B. 'Gehe zu https://check24.de'.")
-            await self.browser_manager.navigate_to_url(url, browser, self.logger, self.context)
+            await self.browser_manager.navigate_to_url(url, browser, self.context)
 
         @self.command_registry.register("close", ["close", "quit", "exit", "schließen", "beenden"])
         async def close_command(self, params):
             app = params.get("target", self.context.last_application)
             if not app:
                 raise CommandError("Keine Anwendung zum Schließen angegeben.")
-            await self.browser_manager._focus_application(app, self.logger)
+            await self.browser_manager._focus_application(app)
             pyautogui.hotkey("alt", "f4")
             self.logger.log_message(f"Anwendung '{app}' geschlossen.")
 
@@ -660,7 +664,7 @@ class FaceBot:
             app = params.get("target", self.context.last_application)
             if not app:
                 raise CommandError("Keine Anwendung zum Maximieren angegeben.")
-            await self.browser_manager._focus_application(app, self.logger)
+            await self.browser_manager._focus_application(app)
             pyautogui.hotkey("win", "up")
             self.logger.log_message(f"Anwendung '{app}' maximiert.")
 
@@ -670,7 +674,7 @@ class FaceBot:
             app = params.get("app", self.context.last_application)
             if not app:
                 raise CommandError("Keine Anwendung zum Schreiben angegeben.")
-            await self.browser_manager._focus_application(app, self.logger)
+            await self.browser_manager._focus_application(app)
             pyautogui.write(text)
             self.logger.log_message(f"Text '{text}' in {app} geschrieben.")
 
@@ -679,7 +683,7 @@ class FaceBot:
             app = params.get("target", self.context.last_application)
             if not app:
                 raise CommandError("Keine Anwendung zum Speichern angegeben.")
-            await self.browser_manager._focus_application(app, self.logger)
+            await self.browser_manager._focus_application(app)
             pyautogui.hotkey("ctrl", "s")
             self.logger.log_message(f"Dokument in '{app}' gespeichert.")
 
@@ -992,8 +996,8 @@ class FaceBot:
             self.context.user_preferences["browser"] += 1
             encoded_term = quote(search_term)
             search_url = self.config.leta_search_url.format(encoded_term)
-            await self.browser_manager._open_file_or_program(browser, self.logger)
-            await self.browser_manager._focus_application(browser, self.logger)
+            await self.browser_manager._open_file_or_program(browser)
+            await self.browser_manager._focus_application(browser)
             self.browser_manager.driver.get(search_url)
             WebDriverWait(self.browser_manager.driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
             self.logger.log_message(f"Suche nach '{search_term}' abgeschlossen!")
