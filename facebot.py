@@ -995,7 +995,7 @@ class FaceBot:
             await self.browser_manager._open_file_or_program(browser, self.logger)
             await self.browser_manager._focus_application(browser, self.logger)
             self.browser_manager.driver.get(search_url)
-            WebDriverWait(self.browser_manager.driver mer, 10).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+            WebDriverWait(self.browser_manager.driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
             self.logger.log_message(f"Suche nach '{search_term}' abgeschlossen!")
 
     @handle_errors
