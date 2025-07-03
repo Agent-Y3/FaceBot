@@ -41,6 +41,7 @@ import pyautogui
 from dotenv import load_dotenv
 import re
 import queue
+import pygame
 
 pygame.mixer.init()
 load_dotenv()
