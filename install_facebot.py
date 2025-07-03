@@ -44,17 +44,36 @@ def check_tkinter():
         print_status("tkinter not found. Install it with: 'pip install tk' or ensure your Python installation includes tkinter (usually included on Windows).", "red")
         return False
 
+def install_spacy_model(model_name="en_core_web_sm"):
+    """Installiert das spaCy-Modell mit Wiederholungslogik."""
+    for attempt in range(3):
+        try:
+            print_status(f"Versuche, spaCy-Modell {model_name} zu installieren (Versuch {attempt + 1}/3)...")
+            result = subprocess.run([sys.executable, "-m", "spacy", "download", model_name], capture_output=True, text=True, timeout=300)
+            if result.returncode == 0:
+                print_status(f"spaCy-Modell {model_name} erfolgreich installiert.")
+                return True
+            else:
+                print_status(f"Fehler beim Installieren von {model_name}: {result.stderr}", "yellow")
+        except subprocess.TimeoutExpired:
+            print_status(f"Timeout beim Installieren von {model_name}. Überprüfe die Internetverbindung.", "yellow")
+        except subprocess.CalledProcessError as e:
+            print_status(f"Fehler beim Installieren von {model_name}: {e}", "yellow")
+        time.sleep(2)
+    print_status(f"Fehler: Konnte {model_name} nicht installieren. Installiere es manuell mit 'python -m spacy download {model_name}'.", "red")
+    return False
+
 def main(facebot_script_path=""):
     install_python = False
 
-    print_status(f"Checking FaceBot directory: {FACEBOT_DIR}")
+    print_status(f"Prüfe FaceBot-Verzeichnis: {FACEBOT_DIR}")
     if not os.path.exists(FACEBOT_DIR):
         os.makedirs(FACEBOT_DIR)
-        print_status(f"Directory {FACEBOT_DIR} created.")
+        print_status(f"Verzeichnis {FACEBOT_DIR} erstellt.")
     else:
-        print_status(f"Directory {FACEBOT_DIR} already exists.")
+        print_status(f"Verzeichnis {FACEBOT_DIR} existiert bereits.")
 
-    print_status("Checking Python installation...")
+    print_status("Prüfe Python-Installation...")
     python_version = None
     if check_command("python"):
         try:
@@ -62,91 +81,84 @@ def main(facebot_script_path=""):
             version_str = result.stdout.split()[1]
             python_version = tuple(map(int, version_str.split(".")))
             if python_version >= PYTHON_MIN_VERSION:
-                print_status(f"Python {version_str} is installed.")
+                print_status(f"Python {version_str} ist installiert.")
             else:
-                print_status(f"Python version {version_str} is too old. At least Python {'.'.join(map(str, PYTHON_MIN_VERSION))} is required.", "yellow")
+                print_status(f"Python-Version {version_str} ist zu alt. Mindestens Python {'.'.join(map(str, PYTHON_MIN_VERSION))} erforderlich.", "yellow")
                 install_python = True
         except (subprocess.CalledProcessError, ValueError):
-            print_status("Error retrieving Python version.", "red")
+            print_status("Fehler beim Abrufen der Python-Version.", "red")
             install_python = True
     else:
-        print_status("Python not found.", "yellow")
+        print_status("Python nicht gefunden.", "yellow")
         install_python = True
 
     if install_python:
-        print_status("Please install Python 3.8 or higher manually from: https://www.python.org/downloads/. Ensure 'Add Python to PATH' is checked during installation.", "red")
+        print_status("Bitte installiere Python 3.8 oder höher manuell von: https://www.python.org/downloads/. Stelle sicher, dass 'Add Python to PATH' während der Installation aktiviert ist.", "red")
         sys.exit(1)
 
-    print_status("Checking tkinter...")
+    print_status("Prüfe tkinter...")
     if not check_tkinter():
-        print_status("Attempting to install tkinter...")
+        print_status("Versuche, tkinter zu installieren...")
         try:
             subprocess.run([sys.executable, "-m", "pip", "install", "tk", "--quiet"], check=True)
-            print_status("tkinter successfully installed.")
+            print_status("tkinter erfolgreich installiert.")
         except subprocess.CalledProcessError:
-            print_status("Failed to install tkinter. Ensure your Python installation includes tkinter or install it manually.", "red")
+            print_status("Fehler beim Installieren von tkinter. Stelle sicher, dass tkinter in deiner Python-Installation enthalten ist oder installiere es manuell.", "red")
             sys.exit(1)
 
-    print_status("Updating pip...")
+    print_status("Aktualisiere pip...")
     try:
         subprocess.run([sys.executable, "-m", "pip", "install", "--upgrade", "pip", "--quiet"], check=True)
-        print_status("pip successfully updated.")
+        print_status("pip erfolgreich aktualisiert.")
     except subprocess.CalledProcessError:
-        print_status("Error updating pip. Ensure you have an active internet connection.", "red")
+        print_status("Fehler beim Aktualisieren von pip. Stelle sicher, dass du eine aktive Internetverbindung hast.", "red")
         sys.exit(1)
 
-    print_status("Note: Visual C++ Build Tools may be required for some modules (e.g., sounddevice). If installation fails, download them from: https://aka.ms/vs/17/release/vs_BuildTools.exe", "yellow")
+    print_status("Hinweis: Visual C++ Build Tools können für einige Module (z.B. sounddevice) erforderlich sein. Falls die Installation fehlschlägt, lade sie von: https://aka.ms/vs/17/release/vs_BuildTools.exe herunter", "yellow")
 
-    print_status("Installing Python modules...")
+    print_status("Installiere Python-Module...")
     for module in REQUIRED_MODULES:
-        print_status(f"Checking/Installing {module}...")
+        print_status(f"Prüfe/Installiere {module}...")
         try:
             result = subprocess.run([sys.executable, "-m", "pip", "show", module], capture_output=True, text=True)
             if result.returncode == 0:
-                print_status(f"{module} is already installed.")
+                print_status(f"{module} ist bereits installiert.")
             else:
                 subprocess.run([sys.executable, "-m", "pip", "install", module, "--quiet"], check=True)
-                print_status(f"{module} successfully installed.")
+                print_status(f"{module} erfolgreich installiert.")
         except subprocess.CalledProcessError:
-            print_status(f"Error installing {module}. Check your internet connection or install manually with 'pip install {module}'.", "red")
+            print_status(f"Fehler beim Installieren von {module}. Überprüfe deine Internetverbindung oder installiere manuell mit 'pip install {module}'.", "red")
             sys.exit(1)
 
-    print_status("Installing spaCy language model (en_core_web_sm)...")
-    try:
-        result = subprocess.run([sys.executable, "-m", "spacy", "download", "en_core_web_sm"], capture_output=True, text=True)
-        if result.returncode == 0:
-            print_status("spaCy model en_core_web_sm successfully installed.")
-        else:
-            print_status("Error installing spaCy model. Install it manually with: 'python -m spacy download en_core_web_sm'.", "red")
-            sys.exit(1)
-    except subprocess.CalledProcessError:
-        print_status("Error installing spaCy model. Ensure internet connection and try: 'python -m spacy download en_core_web_sm'.", "red")
+    print_status("Installiere spaCy-Sprachmodell (en_core_web_sm)...")
+    if not install_spacy_model("en_core_web_sm"):
+        print_status("Installation von spaCy-Modell fehlgeschlagen. FaceBot kann ohne dieses Modell nicht ausgeführt werden.", "red")
         sys.exit(1)
 
-    print_status("Checking WinSCP...")
+    print_status("Prüfe WinSCP...")
     if os.path.exists(WINSCP_PATH):
-        print_status(f"WinSCP is installed at: {WINSCP_PATH}")
+        print_status(f"WinSCP ist installiert unter: {WINSCP_PATH}")
     else:
-        print_status("WinSCP not found. Recommended for SFTP functions. Download it from: https://winscp.net/eng/download.php", "yellow")
+        print_status("WinSCP nicht gefunden. Für SFTP-Funktionen empfohlen. Lade es von: https://winscp.net/eng/download.php herunter", "yellow")
 
-    print_status("Checking PuTTY...")
+    print_status("Prüfe PuTTY...")
     if os.path.exists(PUTTY_PATH):
-        print_status(f"PuTTY is installed at: {PUTTY_PATH}")
+        print_status(f"PuTTY ist installiert unter: {PUTTY_PATH}")
     else:
-        print_status("PuTTY not found. Recommended for SSH functions. Download it from: https://www.chiark.greenend.org.uk/~sgtatham/putty/latest.html", "yellow")
+        print_status("PuTTY nicht gefunden. Für SSH-Funktionen empfohlen. Lade es von: https://www.chiark.greenend.org.uk/~sgtatham/putty/latest.html herunter", "yellow")
 
     if facebot_script_path and os.path.exists(facebot_script_path):
-        print_status(f"Copying facebot.py to {FACEBOT_DIR}...")
+        print_status(f"Kopiere facebot.py nach {FACEBOT_DIR}...")
         try:
             shutil.copy(facebot_script_path, os.path.join(FACEBOT_DIR, "facebot.py"))
-            print_status("facebot.py successfully copied.")
+            print_status("facebot.py erfolgreich kopiert.")
         except Exception as e:
-            print_status(f"Error copying facebot.py: {e}. Ensure the file is accessible and the destination is writable.", "red")
+            print_status(f"Fehler beim Kopieren von facebot.py: {e}. Stelle sicher, dass die Datei zugänglich ist und das Zielverzeichnis beschreibbar ist.", "red")
             sys.exit(1)
     else:
-        print_status(f"No valid facebot.py path provided or file not found. Copy facebot.py manually to {FACEBOT_DIR} or provide the correct path with --facebot-script-path.", "yellow")
+        print_status(f"Kein gültiger facebot.py-Pfad angegeben oder Datei nicht gefunden. Kopiere facebot.py manuell nach {FACEBOT_DIR} oder gib den korrekten Pfad mit --facebot-script-path an.", "yellow")
 
-    print_status("Creating .env file for FaceBot configuration...")
+    print_status("Erstelle .env-Datei für FaceBot-Konfiguration...")
     env_path = os.path.join(FACEBOT_DIR, ".env")
     if not os.path.exists(env_path):
         try:
@@ -175,22 +187,22 @@ def main(facebot_script_path=""):
                     f"SERVER_PASSWORD=\n"
                     f"SERVER_KEY_PATH=\n"
                 )
-            print_status(f".env file created at {env_path}. Please update it with your Discord and server credentials.")
+            print_status(f".env-Datei erstellt unter {env_path}. Bitte aktualisiere sie mit deinen Discord- und Server-Zugangsdaten.")
         except Exception as e:
-            print_status(f"Error creating .env file: {e}. Create it manually in {FACEBOT_DIR} with required environment variables.", "red")
+            print_status(f"Fehler beim Erstellen der .env-Datei: {e}. Erstelle sie manuell in {FACEBOT_DIR} mit den erforderlichen Umgebungsvariablen.", "red")
             sys.exit(1)
     else:
-        print_status(f".env file already exists at {env_path}.")
+        print_status(f".env-Datei existiert bereits unter {env_path}.")
 
-    print_status("Installation completed successfully!", "green")
-    print_status("How to start FaceBot:")
-    print_status(f"1. Navigate to: cd {FACEBOT_DIR}")
-    print_status("2. Update the .env file with your credentials (e.g., DISCORD_EMAIL, SERVER_HOST)")
-    print_status("3. Start the bot: python facebot.py")
-    print_status("If issues occur, ensure WinSCP/PuTTY are installed, the .env file is configured, and check your internet connection.")
+    print_status("Installation erfolgreich abgeschlossen!", "green")
+    print_status("So startest du FaceBot:")
+    print_status(f"1. Navigiere zu: cd {FACEBOT_DIR}")
+    print_status("2. Aktualisiere die .env-Datei mit deinen Zugangsdaten (z.B. DISCORD_EMAIL, SERVER_HOST)")
+    print_status("3. Starte den Bot: python facebot.py")
+    print_status("Falls Probleme auftreten, stelle sicher, dass WinSCP/PuTTY installiert sind, die .env-Datei konfiguriert ist und die Internetverbindung funktioniert.")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Installs FaceBot dependencies.")
-    parser.add_argument("--facebot-script-path", default="", help="Path to facebot.py")
+    parser = argparse.ArgumentParser(description="Installiert FaceBot-Abhängigkeiten.")
+    parser.add_argument("--facebot-script-path", default="", help="Pfad zu facebot.py")
     args = parser.parse_args()
     main(args.facebot_script_path)
