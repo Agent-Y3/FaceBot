@@ -6,6 +6,7 @@ import logging
 import asyncio
 import sounddevice as sd
 import numpy as np
+import speech_recognition as sr
 from dataclasses import dataclass
 from typing import Optional, Dict, Tuple, List, Callable
 from urllib.parse import quote, urlparse
@@ -602,9 +603,9 @@ class FaceBot:
         try:
             with self.browser_manager:
                 self.context.last_application = self.browser_manager.browser_name
-                self.logger.log_message(f"Okay, I'm ready! Using browser: {self.browser_manager.browser_name or 'Unknown'}. Say e.g., 'Open Edge', 'Search for xAI'.")
+                self.logger.log_message(f"Okay, ich bin bereit! Verwende Browser: {self.browser_manager.browser_name or 'Unbekannt'}. Sage z.B. 'Öffne Edge', 'Suche nach xAI'.")
         except BrowserError as e:
-            self.logger.log_message(f"Browser initialization failed: {e}. Browser functions disabled.")
+            self.logger.log_message(f"Browserinitialisierung fehlgeschlagen: {e}. Browserfunktionen deaktiviert.")
             self.browser_manager.browser_name = "chrome"
 
     def _setup_logger(self):
@@ -615,26 +616,26 @@ class FaceBot:
         logger.addHandler(handler)
 
     def _register_commands(self):
-        @self.command_registry.register("open", ["open", "start", "launch"])
+        @self.command_registry.register("open", ["open", "start", "launch", "öffnen", "starte"])
         async def open_command(self, params):
             target = params.get("target")
             if not target:
-                raise CommandError("What to open? Say e.g., 'Open Edge'.")
+                raise CommandError("Was soll geöffnet werden? Sage z.B. 'Öffne Edge'.")
             await self.browser_manager._open_file_or_program(target, self.logger)
 
-        @self.command_registry.register("play", ["play", "music"])
+        @self.command_registry.register("play", ["play", "music", "spiele", "musik"])
         async def play_command(self, params):
             song_name = params.get("target")
             if not song_name:
-                raise CommandError("Which song to play? Say e.g., 'Play Shape of You'.")
+                raise CommandError("Welchen Song soll ich abspielen? Sage z.B. 'Spiele Shape of You'.")
             await self._play_spotify_song(song_name)
 
-        @self.command_registry.register("search", ["search", "google", "find"])
+        @self.command_registry.register("search", ["search", "google", "find", "suche", "finde"])
         async def search_command(self, params):
             search_term = params.get("search_term")
             browser = params.get("browser", self.browser_manager.browser_name)
             if not search_term:
-                raise CommandError("What to search for? Say e.g., 'Search for xAI'.")
+                raise CommandError("Wonach soll ich suchen? Sage z.B. 'Suche nach xAI'.")
             await self._search_leta(search_term, browser)
 
         @self.command_registry.register("goto", ["go to", "goto", "navigate to", "gehe zu"])
@@ -642,107 +643,107 @@ class FaceBot:
             url = params.get("url")
             browser = params.get("browser", self.browser_manager.browser_name)
             if not url:
-                raise CommandError("What website to go to? Say e.g., 'Go to https://check24.de'.")
+                raise CommandError("Welche Website soll ich öffnen? Sage z.B. 'Gehe zu https://check24.de'.")
             await self.browser_manager.navigate_to_url(url, browser, self.logger, self.context)
 
-        @self.command_registry.register("close", ["close", "quit", "exit"])
+        @self.command_registry.register("close", ["close", "quit", "exit", "schließen", "beenden"])
         async def close_command(self, params):
             app = params.get("target", self.context.last_application)
             if not app:
-                raise CommandError("No application specified to close.")
+                raise CommandError("Keine Anwendung zum Schließen angegeben.")
             await self.browser_manager._focus_application(app, self.logger)
             pyautogui.hotkey("alt", "f4")
-            self.logger.log_message(f"Application '{app}' closed.")
+            self.logger.log_message(f"Anwendung '{app}' geschlossen.")
 
-        @self.command_registry.register("maximize", ["maximize", "enlarge"])
+        @self.command_registry.register("maximize", ["maximize", "enlarge", "maximieren"])
         async def maximize_command(self, params):
             app = params.get("target", self.context.last_application)
             if not app:
-                raise CommandError("No application specified to maximize.")
+                raise CommandError("Keine Anwendung zum Maximieren angegeben.")
             await self.browser_manager._focus_application(app, self.logger)
             pyautogui.hotkey("win", "up")
-            self.logger.log_message(f"Application '{app}' maximized.")
+            self.logger.log_message(f"Anwendung '{app}' maximiert.")
 
-        @self.command_registry.register("write", ["write", "type", "input"])
+        @self.command_registry.register("write", ["write", "type", "input", "schreiben", "eingeben"])
         async def write_command(self, params):
             text = params.get("text")
             app = params.get("app", self.context.last_application)
             if not app:
-                raise CommandError("No application specified to write.")
+                raise CommandError("Keine Anwendung zum Schreiben angegeben.")
             await self.browser_manager._focus_application(app, self.logger)
             pyautogui.write(text)
-            self.logger.log_message(f"Text '{text}' written in {app}.")
+            self.logger.log_message(f"Text '{text}' in {app} geschrieben.")
 
-        @self.command_registry.register("save", ["save", "store"])
+        @self.command_registry.register("save", ["save", "store", "speichern"])
         async def save_command(self, params):
             app = params.get("target", self.context.last_application)
             if not app:
-                raise CommandError("No application specified to save.")
+                raise CommandError("Keine Anwendung zum Speichern angegeben.")
             await self.browser_manager._focus_application(app, self.logger)
             pyautogui.hotkey("ctrl", "s")
-            self.logger.log_message(f"Document saved in '{app}'.")
+            self.logger.log_message(f"Dokument in '{app}' gespeichert.")
 
-        @self.command_registry.register("click", ["click"])
+        @self.command_registry.register("click", ["click", "klicken"])
         async def click_command(self, params):
             await self._perform_click()
 
-        @self.command_registry.register("upload", ["upload", "send file"])
+        @self.command_registry.register("upload", ["upload", "send file", "hochladen", "datei senden"])
         async def upload_command(self, params):
             file_name = params.get("target")
             if not file_name:
-                raise CommandError("Which file to upload? Say e.g., 'Upload document.txt'.")
+                raise CommandError("Welche Datei soll hochgeladen werden? Sage z.B. 'Hochladen document.txt'.")
             if not self.config_manager.server_config:
-                self.logger.log_message("No server data. Open settings.")
+                self.logger.log_message("Keine Serverdaten. Öffne die Einstellungen.")
                 self._open_config_ui()
                 if not self.config_manager.server_config:
-                    raise ConfigError("Server configuration required")
+                    raise ConfigError("Serverkonfiguration erforderlich")
             await self._upload_file(file_name)
 
-        @self.command_registry.register("discord", ["discord", "message", "send"])
+        @self.command_registry.register("discord", ["discord", "message", "send", "nachricht", "senden"])
         async def discord_command(self, params):
             target = params.get("target")
             message = params.get("message")
             if not target or not message:
-                raise CommandError("Tell me who to send to and what, e.g., 'Send to @user Hello'.")
+                raise CommandError("Sage mir, an wen und was ich senden soll, z.B. 'Sende an @user Hallo'.")
             if not self.config.discord_email or not self.config.discord_password:
-                self.logger.log_message("No Discord credentials. Open settings.")
+                self.logger.log_message("Keine Discord-Zugangsdaten. Öffne die Einstellungen.")
                 self._open_config_ui()
                 if not self.config.discord_email or not self.config.discord_password:
-                    raise ConfigError("Discord credentials required")
+                    raise ConfigError("Discord-Zugangsdaten erforderlich")
             await self._send_discord_message(target, message)
 
         @self.command_registry.register("winscp", ["winscp", "server", "sftp"])
         async def winscp_command(self, params):
             if not self.config_manager.server_config:
-                self.logger.log_message("No server data. Open settings.")
+                self.logger.log_message("Keine Serverdaten. Öffne die Einstellungen.")
                 self._open_config_ui()
                 if not self.config_manager.server_config:
-                    raise ConfigError("Server configuration required")
+                    raise ConfigError("Serverkonfiguration erforderlich")
             await self._start_winscp()
 
         @self.command_registry.register("putty", ["putty", "ssh", "terminal"])
         async def putty_command(self, params):
             if not self.config_manager.server_config:
-                self.logger.log_message("No server data. Open settings.")
+                self.logger.log_message("Keine Serverdaten. Öffne die Einstellungen.")
                 self._open_config_ui()
                 if not self.config_manager.server_config:
-                    raise ConfigError("Server configuration required")
+                    raise ConfigError("Serverkonfiguration erforderlich")
             await self._start_putty()
 
-        @self.command_registry.register("task", ["task", "do", "execute"])
+        @self.command_registry.register("task", ["task", "do", "execute", "aufgabe", "ausführen"])
         async def task_command(self, params):
             task = params.get("target")
             if not task:
-                raise CommandError("What to do? Say e.g., 'Search for xAI'.")
+                raise CommandError("Was soll ich tun? Sage z.B. 'Suche nach xAI'.")
             await self._execute_task(task)
 
-        @self.command_registry.register("help", ["help", "commands"])
+        @self.command_registry.register("help", ["help", "commands", "hilfe", "befehle"])
         async def help_command(self, params):
-            self.logger.log_message("I can do:\n- Open programs: 'Open Edge'\n- Search: 'Search for xAI'\n- Websites: 'Go to https://check24.de'\n- Music: 'Play Shape of You'\n- Upload: 'Upload document.txt'\n- Discord: 'Send to @user Hello'\n- Server: 'Start WinSCP', 'Start PuTTY'\n- Write: 'Write in Word Hello'\n- Exit: 'Exit'\n- Help: 'Help'")
+            self.logger.log_message("Ich kann Folgendes tun:\n- Programme öffnen: 'Öffne Edge'\n- Suchen: 'Suche nach xAI'\n- Websites: 'Gehe zu https://check24.de'\n- Musik: 'Spiele Shape of You'\n- Hochladen: 'Hochladen document.txt'\n- Discord: 'Sende an @user Hallo'\n- Server: 'Starte WinSCP', 'Starte PuTTY'\n- Schreiben: 'Schreibe in Word Hallo'\n- Beenden: 'Beenden'\n- Hilfe: 'Hilfe'")
 
-        @self.command_registry.register("exit", ["exit", "quit", "stop"])
+        @self.command_registry.register("exit", ["exit", "quit", "stop", "beenden", "stoppen"])
         async def exit_command(self, params):
-            self.logger.log_message("Shutting down. Bye!")
+            self.logger.log_message("Fahre herunter. Tschüss!")
             self.speech_manager.listening = False
             if self.browser_manager.driver:
                 self.browser_manager.driver.quit()
@@ -751,39 +752,39 @@ class FaceBot:
     @handle_errors
     def _open_config_ui(self):
         config_window = ctk.CTkToplevel(self.root)
-        config_window.title("FaceBot Settings")
+        config_window.title("FaceBot Einstellungen")
         config_window.geometry("400x550")
-        ctk.CTkLabel(config_window, text="Server Configuration", font=("Arial", 12, "bold")).pack(pady=10)
+        ctk.CTkLabel(config_window, text="Serverkonfiguration", font=("Arial", 12, "bold")).pack(pady=10)
         ctk.CTkLabel(config_window, text="Host (IP/Hostname):").pack()
-        host_entry = ctk.CTkEntry(config_window, placeholder_text="Enter host")
+        host_entry = ctk.CTkEntry(config_window, placeholder_text="Host eingeben")
         host_entry.pack()
         host_entry.insert(0, self.config_manager.server_config.get('host', '') if self.config_manager.server_config else '')
-        ctk.CTkLabel(config_window, text="Username:").pack()
-        username_entry = ctk.CTkEntry(config_window, placeholder_text="Enter username")
+        ctk.CTkLabel(config_window, text="Benutzername:").pack()
+        username_entry = ctk.CTkEntry(config_window, placeholder_text="Benutzername eingeben")
         username_entry.pack()
         username_entry.insert(0, self.config_manager.server_config.get('username', '') if self.config_manager.server_config else '')
-        ctk.CTkLabel(config_window, text="Password (optional if key is used):").pack()
-        password_entry = ctk.CTkEntry(config_window, show="*", placeholder_text="Enter password")
+        ctk.CTkLabel(config_window, text="Passwort (optional, wenn Schlüssel verwendet):").pack()
+        password_entry = ctk.CTkEntry(config_window, show="*", placeholder_text="Passwort eingeben")
         password_entry.pack()
         password_entry.insert(0, self.config_manager.server_config.get('password', '') if self.config_manager.server_config else '')
-        ctk.CTkLabel(config_window, text="Key Path (.ppk, optional):").pack()
-        key_path_entry = ctk.CTkEntry(config_window, placeholder_text="Enter key path")
+        ctk.CTkLabel(config_window, text="Schlüsselpfad (.ppk, optional):").pack()
+        key_path_entry = ctk.CTkEntry(config_window, placeholder_text="Schlüsselpfad eingeben")
         key_path_entry.pack()
         key_path_entry.insert(0, self.config_manager.server_config.get('key_path', '') if self.config_manager.server_config else '')
-        ctk.CTkLabel(config_window, text="Discord Configuration", font=("Arial", 12, "bold")).pack(pady=10)
-        ctk.CTkLabel(config_window, text="Email:").pack()
-        discord_email_entry = ctk.CTkEntry(config_window, placeholder_text="Enter email")
+        ctk.CTkLabel(config_window, text="Discord-Konfiguration", font=("Arial", 12, "bold")).pack(pady=10)
+        ctk.CTkLabel(config_window, text="E-Mail:").pack()
+        discord_email_entry = ctk.CTkEntry(config_window, placeholder_text="E-Mail eingeben")
         discord_email_entry.pack()
         discord_email_entry.insert(0, self.config.discord_email)
-        ctk.CTkLabel(config_window, text="Password:").pack()
-        discord_password_entry = ctk.CTkEntry(config_window, show="*", placeholder_text="Enter password")
+        ctk.CTkLabel(config_window, text="Passwort:").pack()
+        discord_password_entry = ctk.CTkEntry(config_window, show="*", placeholder_text="Passwort eingeben")
         discord_password_entry.pack()
         discord_password_entry.insert(0, self.config.discord_password)
-        ctk.CTkLabel(config_window, text="General Settings", font=("Arial", 12, "bold")).pack(pady=10)
+        ctk.CTkLabel(config_window, text="Allgemeine Einstellungen", font=("Arial", 12, "bold")).pack(pady=10)
         speech_var = ctk.BooleanVar(value=self.config.enable_speech)
-        ctk.CTkCheckBox(config_window, text="Enable Speech Output", variable=speech_var).pack()
+        ctk.CTkCheckBox(config_window, text="Sprachausgabe aktivieren", variable=speech_var).pack()
         listening_var = ctk.BooleanVar(value=self.config.enable_listening)
-        ctk.CTkCheckBox(config_window, text="Enable Speech Recognition", variable=listening_var).pack()
+        ctk.CTkCheckBox(config_window, text="Spracherkennung aktivieren", variable=listening_var).pack()
         def save():
             try:
                 host = self._sanitize_input(host_entry.get().strip())
@@ -791,11 +792,11 @@ class FaceBot:
                 password = self._sanitize_input(password_entry.get().strip())
                 key_path = self._sanitize_input(key_path_entry.get().strip())
                 if not host or not re.match(r"^[a-zA-Z0-9.-]+$", host):
-                    raise ConfigError("Invalid host format")
+                    raise ConfigError("Ungültiges Host-Format")
                 if not username or not re.match(r"^[a-zA-Z0-9_-]+$", username):
-                    raise ConfigError("Invalid username format")
+                    raise ConfigError("Ungültiges Benutzername-Format")
                 if key_path and not os.path.exists(key_path):
-                    raise ConfigError("Invalid key path")
+                    raise ConfigError("Ungültiger Schlüsselpfad")
                 if host and username:
                     self.config_manager.server_config = {
                         "host": host,
@@ -806,37 +807,37 @@ class FaceBot:
                 self.config.discord_email = self._sanitize_input(discord_email_entry.get().strip())
                 self.config.discord_password = self._sanitize_input(discord_password_entry.get().strip())
                 if not self.config.discord_email or not re.match(r"[^@]+@[^@]+\.[^@]+", self.config.discord_email):
-                    raise ConfigError("Invalid Discord email")
+                    raise ConfigError("Ungültige Discord-E-Mail")
                 self.config.enable_speech = speech_var.get()
                 self.config.enable_listening = listening_var.get()
                 self.config_manager._save_config()
-                self.logger.log_message("Settings saved.")
+                self.logger.log_message("Einstellungen gespeichert.")
                 if not self.config.enable_listening and self.speech_manager.listening:
                     self.toggle_listening()
                 config_window.destroy()
             except Exception as e:
-                self.logger.log_message(f"Error saving settings: {e}")
-        ctk.CTkButton(config_window, text="Save", command=save).pack(pady=20)
+                self.logger.log_message(f"Fehler beim Speichern der Einstellungen: {e}")
+        ctk.CTkButton(config_window, text="Speichern", command=save).pack(pady=20)
         config_window.transient(self.root)
         config_window.grab_set()
 
     @handle_errors
     async def toggle_listening(self):
         if not self.config.enable_listening:
-            raise SpeechError("Speech recognition disabled in settings.")
+            raise SpeechError("Spracherkennung in den Einstellungen deaktiviert.")
         if not self.speech_manager.listening:
             try:
                 sr.Microphone()
                 self.speech_manager.listening = True
-                self.logger.listen_button.configure(text="Stop Microphone")
+                self.logger.listen_button.configure(text="Mikrofon stoppen")
                 asyncio.create_task(self.speech_manager.listen(self))
-                self.logger.log_message("Hearing...")
+                self.logger.log_message("Höre zu...")
             except Exception as e:
-                raise SpeechError(f"Microphone error: {e}. Use text input.")
+                raise SpeechError(f"Mikrofonfehler: {e}. Verwende Texteingabe.")
         else:
             self.speech_manager.listening = False
-            self.logger.listen_button.configure(text="Microphone")
-            self.logger.log_message("Microphone turned off.")
+            self.logger.listen_button.configure(text="Mikrofon")
+            self.logger.log_message("Mikrofon ausgeschaltet.")
 
     @handle_errors
     def _sanitize_input(self, cmd: str) -> str:
@@ -854,19 +855,19 @@ class FaceBot:
         if not cmd:
             return
         cmd = self._sanitize_input(cmd)
-        self.logger.log_message(f"You: {cmd}")
+        self.logger.log_message(f"Du: {cmd}")
         cmd = re.sub(r'^facebot[,]?[\s]*(hey\s)?', '', cmd, flags=re.IGNORECASE).strip().lower()
         intent, params = self.command_registry.parse(cmd, self.context)
         if not intent:
-            raise CommandError(f"I didn't understand '{cmd}'. Say e.g., 'Open Edge', 'Search for xAI', or 'Help'.")
+            raise CommandError(f"Ich habe '{cmd}' nicht verstanden. Sage z.B. 'Öffne Edge', 'Suche nach xAI', oder 'Hilfe'.")
         if intent in self.command_registry.commands:
             await self.command_registry.commands[intent]["func"](self, params)
         else:
-            raise CommandError(f"Command '{cmd}' not understood. Say e.g., 'Open Edge' or 'Help'.")
+            raise CommandError(f"Befehl '{cmd}' nicht verstanden. Sage z.B. 'Öffne Edge' oder 'Hilfe'.")
 
     @handle_errors
     async def _execute_task(self, task: str):
-        self.logger.log_message(f"Working on: '{task}'...")
+        self.logger.log_message(f"Arbeite an: '{task}'...")
         self.context.last_action = "task"
         task_lower = task.lower().strip()
         steps = re.split(r"\s+and\s+|,\s*", task_lower)
@@ -876,22 +877,22 @@ class FaceBot:
                 continue
             intent, params = self.command_registry.parse(step, self.context)
             if not intent:
-                raise CommandError(f"Step '{step}' not understood. Say e.g., 'Open Edge'.")
+                raise CommandError(f"Schritt '{step}' nicht verstanden. Sage z.B. 'Öffne Edge'.")
             if intent in self.command_registry.commands:
                 await self.command_registry.commands[intent]["func"](self, params)
             else:
-                raise CommandError(f"Step '{step}' not understood.")
+                raise CommandError(f"Schritt '{step}' nicht verstanden.")
 
     @handle_errors
     async def _perform_click(self):
         pyautogui.click()
-        self.logger.log_message("Click performed.")
+        self.logger.log_message("Klick ausgeführt.")
 
     @handle_errors
     async def _start_winscp(self):
         if not os.path.exists(self.config.winscp_path):
-            raise ConfigError(f"WinSCP not found at '{self.config.winscp_path}'.")
-        self.logger.log_message("Starting WinSCP and connecting to server...")
+            raise ConfigError(f"WinSCP nicht gefunden unter: '{self.config.winscp_path}'.")
+        self.logger.log_message("Starte WinSCP und verbinde mit Server...")
         self.context.last_action = "winscp"
         cmd = [self.config.winscp_path, f"sftp://{self.config_manager.server_config['username']}@{self.config_manager.server_config['host']}"]
         if self.config_manager.server_config["key_path"]:
@@ -902,8 +903,8 @@ class FaceBot:
     @handle_errors
     async def _start_putty(self):
         if not os.path.exists(self.config.putty_path):
-            raise ConfigError(f"PuTTY not found at '{self.config.putty_path}'.")
-        self.logger.log_message("Starting PuTTY and connecting to server...")
+            raise ConfigError(f"PuTTY nicht gefunden unter: '{self.config.putty_path}'.")
+        self.logger.log_message("Starte PuTTY und verbinde mit Server...")
         self.context.last_action = "putty"
         cmd = [self.config.putty_path, "-ssh", f"{self.config_manager.server_config['username']}@{self.config_manager.server_config['host']}"]
         if self.config_manager.server_config["key_path"]:
@@ -915,8 +916,8 @@ class FaceBot:
     async def _check_process_output(self, process: subprocess.Popen, name: str):
         stdout, stderr = process.communicate(timeout=5)
         if stderr:
-            raise ConfigError(f"Error with {name}: {stderr.decode()}")
-        self.logger.log_message(f"{name} started successfully!")
+            raise ConfigError(f"Fehler bei {name}: {stderr.decode()}")
+        self.logger.log_message(f"{name} erfolgreich gestartet!")
 
     @handle_errors
     async def _upload_file(self, file_name: str):
@@ -930,10 +931,10 @@ class FaceBot:
                     file_path = os.path.join(root, file_name)
                     break
         if not file_path or not os.path.exists(file_path):
-            raise CommandError(f"File '{file_name}' not found.")
+            raise CommandError(f"Datei '{file_name}' nicht gefunden.")
         if not os.path.exists(self.config.winscp_path):
-            raise ConfigError(f"WinSCP not found at '{self.config.winscp_path}'.")
-        self.logger.log_message(f"Uploading '{file_path}' to server...")
+            raise ConfigError(f"WinSCP nicht gefunden unter: '{self.config.winscp_path}'.")
+        self.logger.log_message(f"Lade '{file_path}' auf den Server hoch...")
         self.context.last_action = "upload"
         script_path = os.path.join(os.path.expanduser("~"), "upload_script.txt")
         if self.config_manager.server_config["key_path"]:
@@ -955,15 +956,15 @@ class FaceBot:
             cmd.extend(["/parameter", self._sanitize_input(self.config_manager.server_config["password"])])
         subprocess.run(cmd, shell=False, check=True)
         os.remove(script_path)
-        self.logger.log_message("File uploaded successfully!")
+        self.logger.log_message("Datei erfolgreich hochgeladen!")
 
     @handle_errors
     async def _play_spotify_song(self, song_name: str):
         song_name = self._sanitize_input(song_name)
         with self.browser_manager:
             if not self.browser_manager.driver:
-                raise BrowserError("Failed to initialize browser")
-            self.logger.log_message(f"Playing '{song_name}' on Spotify...")
+                raise BrowserError("Fehler beim Initialisieren des Browsers")
+            self.logger.log_message(f"Spiele '{song_name}' auf Spotify...")
             self.context.last_action = "play"
             self.context.user_preferences["music"] += 1
             encoded_song = quote(song_name)
@@ -975,18 +976,18 @@ class FaceBot:
                     EC.element_to_be_clickable((By.CSS_SELECTOR, self.config.tracklist_css))
                 )
                 first_result.click()
-                self.logger.log_message(f"'{song_name}' is playing! Check Spotify login if it doesn't start.")
+                self.logger.log_message(f"'{song_name}' wird abgespielt! Überprüfe die Spotify-Anmeldung, falls es nicht startet.")
             except Exception as e:
-                raise BrowserError(f"Error playing song: {e}. Are you logged into Spotify?")
+                raise BrowserError(f"Fehler beim Abspielen des Songs: {e}. Bist du bei Spotify angemeldet?")
 
     @handle_errors
     async def _search_leta(self, search_term: str, browser: Optional[str]):
         search_term = self._sanitize_input(search_term)
         with self.browser_manager:
             if not self.browser_manager.driver:
-                raise BrowserError("Failed to initialize browser")
+                raise BrowserError("Fehler beim Initialisieren des Browsers")
             browser = browser or self.browser_manager.browser_name or "chrome"
-            self.logger.log_message(f"Searching for '{search_term}' on Mullvad Leta (Brave) in {browser}...")
+            self.logger.log_message(f"Suche nach '{search_term}' auf Mullvad Leta (Brave) in {browser}...")
             self.context.last_action = "search"
             self.context.user_preferences["browser"] += 1
             encoded_term = quote(search_term)
@@ -994,8 +995,8 @@ class FaceBot:
             await self.browser_manager._open_file_or_program(browser, self.logger)
             await self.browser_manager._focus_application(browser, self.logger)
             self.browser_manager.driver.get(search_url)
-            WebDriverWait(self.browser_manager.driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-            self.logger.log_message(f"Search for '{search_term}' completed!")
+            WebDriverWait(self.browser_manager.driver mer, 10).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+            self.logger.log_message(f"Suche nach '{search_term}' abgeschlossen!")
 
     @handle_errors
     async def _send_discord_message(self, target: str, message: str):
@@ -1003,8 +1004,8 @@ class FaceBot:
         message = self._sanitize_input(message)
         with self.browser_manager:
             if not self.browser_manager.driver:
-                raise BrowserError("Failed to initialize browser")
-            self.logger.log_message(f"Sending message to '{target}' on Discord...")
+                raise BrowserError("Fehler beim Initialisieren des Browsers")
+            self.logger.log_message(f"Sende Nachricht an '{target}' auf Discord...")
             self.context.last_action = "discord"
             self.browser_manager.driver.get(self.config.discord_login_url)
             WebDriverWait(self.browser_manager.driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
@@ -1016,19 +1017,19 @@ class FaceBot:
                 email_field.send_keys(self._sanitize_input(self.config.discord_email))
                 password_field.send_keys(self._sanitize_input(self.config.discord_password))
                 self.browser_manager.driver.find_element(By.CSS_SELECTOR, self.config.discord_submit_css).click()
-                self.logger.log_message("Logging into Discord...")
+                self.logger.log_message("Melde mich bei Discord an...")
                 WebDriverWait(self.browser_manager.driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, self.config.discord_message_css)))
             except Exception as e:
-                raise BrowserError(f"Error logging into Discord: {e}. Log in manually or check credentials.")
+                raise BrowserError(f"Fehler beim Anmelden bei Discord: {e}. Melde dich manuell an oder überprüfe die Zugangsdaten.")
             try:
                 message_field = WebDriverWait(self.browser_manager.driver, 10).until(
                     EC.element_to_be_clickable((By.CSS_SELECTOR, self.config.discord_message_css))
                 )
                 message_field.send_keys(f"@{target} {message}")
                 message_field.send_keys(Keys.RETURN)
-                self.logger.log_message(f"Message sent to '{target}'!")
+                self.logger.log_message(f"Nachricht an '{target}' gesendet!")
             except Exception as e:
-                raise BrowserError(f"Error sending message: {e}. Ensure Discord channel active.")
+                raise BrowserError(f"Fehler beim Senden der Nachricht: {e}. Stelle sicher, dass der Discord-Kanal aktiv ist.")
 
     @handle_errors
     async def run(self):
@@ -1041,4 +1042,4 @@ if __name__ == "__main__":
         bot = FaceBot(root)
         asyncio.run(bot.run())
     except Exception as e:
-        print(f"Error starting bot: {e}")
+        print(f"Fehler beim Starten des Bots: {e}")
